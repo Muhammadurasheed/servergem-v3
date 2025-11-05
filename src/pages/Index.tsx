@@ -6,6 +6,7 @@ import Architecture from "@/components/Architecture";
 import CTA from "@/components/CTA";
 import Footer from "@/components/Footer";
 import ChatWidget from "@/components/ChatWidget";
+import Navbar from "@/components/Navbar";
 
 const Index = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -23,6 +24,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen">
+      <Navbar />
       <Hero onCTAClick={handleCTAClick} />
       <Features onAgentClick={handleCTAClick} />
       <HowItWorks onCTAClick={handleCTAClick} />
