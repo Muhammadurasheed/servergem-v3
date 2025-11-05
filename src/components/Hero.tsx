@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, Sparkles, Rocket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import Logo from "@/components/Logo";
 
 interface HeroProps {
   onCTAClick: (message: string) => void;
@@ -21,6 +22,11 @@ const Hero = ({ onCTAClick }: HeroProps) => {
       
       <div className="container relative z-10 mx-auto px-6 py-32">
         <div className="mx-auto max-w-5xl text-center space-y-8">
+          {/* Logo */}
+          <div className="flex justify-center animate-float">
+            <Logo size={120} className="drop-shadow-2xl" />
+          </div>
+          
           {/* Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-2 backdrop-blur-sm">
             <Sparkles className="h-4 w-4 text-primary" />
