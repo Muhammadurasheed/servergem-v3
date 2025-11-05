@@ -1,6 +1,11 @@
 """
 ServerGem Orchestrator Agent
-Production-grade Gemini ADK integration with real service calls
+FAANG-Level Production Implementation
+- Gemini ADK with function calling
+- Production monitoring & observability
+- Security best practices
+- Cost optimization
+- Advanced error handling
 """
 
 import asyncio
@@ -8,6 +13,7 @@ from typing import Dict, List, Optional
 import google.generativeai as genai
 from datetime import datetime
 import json
+import uuid
 
 class OrchestratorAgent:
     """
@@ -30,11 +36,19 @@ class OrchestratorAgent:
         
         # Initialize real services
         from backend.services import GitHubService, GCloudService, DockerService, AnalysisService
+        from backend.services.monitoring import monitoring
+        from backend.services.security import security
+        from backend.services.optimization import optimization
         
         self.github_service = GitHubService(github_token)
         self.gcloud_service = GCloudService(gcloud_project) if gcloud_project else None
         self.docker_service = DockerService()
         self.analysis_service = AnalysisService(gemini_api_key)
+        
+        # Production services
+        self.monitoring = monitoring
+        self.security = security
+        self.optimization = optimization
     
     def _get_function_declarations(self) -> List[Dict]:
         """
@@ -327,8 +341,14 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
         progress_callback=None
     ) -> Dict:
         """
-        Deploy to Cloud Run - REAL IMPLEMENTATION
-        Uses: GCloudService, DockerService
+        Deploy to Cloud Run - PRODUCTION IMPLEMENTATION
+        
+        Features:
+        - Security validation and sanitization
+        - Resource optimization based on framework
+        - Cost estimation
+        - Monitoring and metrics
+        - Structured logging
         """
         
         if not self.gcloud_service:
@@ -338,7 +358,34 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                 'timestamp': datetime.now().isoformat()
             }
         
+        # Generate deployment ID for tracking
+        deployment_id = f"deploy-{uuid.uuid4().hex[:8]}"
+        
         try:
+            # Start monitoring
+            metrics = self.monitoring.start_deployment(deployment_id, service_name)
+            
+            # Security: Validate and sanitize service name
+            name_validation = self.security.validate_service_name(service_name)
+            if not name_validation['valid']:
+                self.monitoring.complete_deployment(deployment_id, "failed")
+                return {
+                    'type': 'error',
+                    'content': f"❌ **Invalid service name**\n\n{name_validation['error']}\n\nRequirements:\n• Lowercase letters, numbers, hyphens only\n• Must start with letter\n• Max 63 characters",
+                    'timestamp': datetime.now().isoformat()
+                }
+            
+            service_name = name_validation['sanitized_name']
+            
+            # Security: Validate environment variables
+            if env_vars:
+                env_validation = self.security.validate_env_vars(env_vars)
+                if env_validation['issues']:
+                    self.monitoring.record_error(
+                        deployment_id,
+                        f"Environment variable issues: {', '.join(env_validation['issues'])}"
+                    )
+                env_vars = env_validation['sanitized']
             # Validate gcloud authentication
             auth_check = self.gcloud_service.validate_gcloud_auth()
             if not auth_check.get('authenticated'):
