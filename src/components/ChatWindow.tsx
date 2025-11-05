@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Minus, Sparkles } from "lucide-react";
+import { X, Minus, Sparkles, Copy, Check } from "lucide-react";
+import confetti from "canvas-confetti";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
 
@@ -8,6 +9,8 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  actions?: Array<{ label: string; onClick: () => void }>;
+  deploymentUrl?: string;
 }
 
 interface ChatWindowProps {
@@ -18,6 +21,7 @@ const ChatWindow = ({ onClose }: ChatWindowProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -27,6 +31,21 @@ const ChatWindow = ({ onClose }: ChatWindowProps) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  const triggerConfetti = () => {
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 },
+      colors: ["#3b82f6", "#8b5cf6", "#06b6d4"],
+    });
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedUrl(true);
+    setTimeout(() => setCopiedUrl(false), 2000);
+  };
 
   const handleSendMessage = async (content: string) => {
     const userMessage: Message = {
@@ -39,17 +58,87 @@ const ChatWindow = ({ onClose }: ChatWindowProps) => {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Simulate AI response (replace with actual API call in Phase 2)
+    // Demo flow simulation
     setTimeout(() => {
       const aiMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: `Great! I'll help you with that. Here's what I found:\n\n\`\`\`python\n# Dockerfile for Flask app\nFROM python:3.11-slim\nWORKDIR /app\nCOPY requirements.txt .\nRUN pip install -r requirements.txt\nCOPY . .\nCMD ["python", "app.py"]\n\`\`\`\n\nReady to deploy to Cloud Run?`,
+        content: `Hi! 👋 I'm ServerGem, your AI deployment assistant.\n\nI'll help you deploy your Node.js API to Cloud Run in minutes.\n\nFirst, I need access to your code. You can:\n1. 📁 Upload your project folder\n2. 🔗 Connect your GitHub repository\n3. 📋 Paste your repository URL\n\nWhich option works for you?`,
         timestamp: new Date(),
+        actions: [
+          { label: "📁 Upload Project", onClick: () => handleGitHubConnect() },
+          { label: "🔗 Connect GitHub", onClick: () => handleGitHubConnect() },
+          { label: "📋 Paste URL", onClick: () => handleGitHubConnect() },
+        ],
       };
       setMessages((prev) => [...prev, aiMessage]);
       setIsLoading(false);
-    }, 1500);
+    }, 200);
+  };
+
+  const handleGitHubConnect = () => {
+    const userAction: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: "Connect GitHub repository",
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userAction]);
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const analysisMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `Perfect! I'm analyzing your repository...\n\n✓ Framework detected: **Express.js v4.18**\n✓ Entry point: \`src/server.js\`\n✓ Dependencies: 12 packages\n✓ Database: **PostgreSQL** (via pg package)\n⚠️ No Dockerfile found (I'll create one)\n⚠️ Environment variables detected (.env file)\n\nYour app looks ready to deploy! I noticed you're using PostgreSQL.\n\nFor production on Cloud Run, I recommend:\n- **Cloud SQL** (managed PostgreSQL)\n- Automatic backups & high availability\n- ~$10/month for starter tier\n\nShould I set this up for you?`,
+        timestamp: new Date(),
+        actions: [
+          { label: "✅ Yes, set up Cloud SQL", onClick: () => handleCloudSQLSetup() },
+          { label: "❌ No, I'll use my own DB", onClick: () => handleCloudSQLSetup() },
+        ],
+      };
+      setMessages((prev) => [...prev, analysisMessage]);
+      setIsLoading(false);
+    }, 500);
+  };
+
+  const handleCloudSQLSetup = () => {
+    const userAction: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: "Yes, set up Cloud SQL",
+      timestamp: new Date(),
+    };
+    setMessages((prev) => [...prev, userAction]);
+    setIsLoading(true);
+
+    setTimeout(() => {
+      const progressMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `Great choice! I'm configuring everything now... 🚀\n\n[✓] Creating Cloud SQL instance (my-nodejs-db)\n[✓] Generating optimized Dockerfile\n[✓] Configuring Secret Manager for credentials\n[⏳] Building container image...\n[⏳] Deploying to Cloud Run...\n\nThis usually takes 2-3 minutes. Hang tight!`,
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, progressMessage]);
+
+      setTimeout(() => {
+        triggerConfetti();
+        const successMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          role: "assistant",
+          content: `🎉 **Deployment Successful!**\n\nYour API is live at:\n\nI've configured:\n✅ Auto HTTPS\n✅ Database connection (secure via Cloud SQL proxy)\n✅ Auto-scaling (0-10 instances)\n✅ Health checks\n✅ Monitoring & logging\n\n**What's next?**\n- Test your endpoints\n- Set up CI/CD for automatic deployments\n- Add a custom domain\n- Configure monitoring alerts\n\nTry your API now, or ask me anything!`,
+          timestamp: new Date(),
+          deploymentUrl: "https://my-api-abc123.run.app",
+          actions: [
+            { label: "📊 View Deployment Logs", onClick: () => {} },
+            { label: "🔄 Set Up CI/CD", onClick: () => {} },
+            { label: "🌐 Add Custom Domain", onClick: () => {} },
+          ],
+        };
+        setMessages((prev) => [...prev, successMessage]);
+        setIsLoading(false);
+      }, 2000);
+    }, 1000);
   };
 
   const handleQuickAction = (action: string) => {
@@ -142,7 +231,40 @@ const ChatWindow = ({ onClose }: ChatWindowProps) => {
             ) : (
               <>
                 {messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} />
+                  <div key={message.id}>
+                    <ChatMessage message={message} />
+                    {message.deploymentUrl && (
+                      <div className="flex items-center gap-2 mb-4 ml-10">
+                        <code className="flex-1 px-3 py-2 bg-accent/30 border border-[rgba(139,92,246,0.2)] rounded-lg text-sm text-[#06b6d4] font-mono">
+                          {message.deploymentUrl}
+                        </code>
+                        <button
+                          onClick={() => copyToClipboard(message.deploymentUrl!)}
+                          className="p-2 bg-accent/50 hover:bg-accent rounded-lg transition-colors"
+                          aria-label="Copy URL"
+                        >
+                          {copiedUrl ? (
+                            <Check size={16} className="text-green-500" />
+                          ) : (
+                            <Copy size={16} />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                    {message.actions && (
+                      <div className="flex flex-wrap gap-2 mb-4 ml-10">
+                        {message.actions.map((action, idx) => (
+                          <button
+                            key={idx}
+                            onClick={action.onClick}
+                            className="px-4 py-2 bg-accent/50 hover:bg-accent rounded-lg text-sm font-medium transition-colors"
+                          >
+                            {action.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
                 {isLoading && (
                   <div className="flex items-start gap-2">
