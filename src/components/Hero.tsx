@@ -1,11 +1,14 @@
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, Rocket } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 interface HeroProps {
   onCTAClick: (message: string) => void;
 }
 
 const Hero = ({ onCTAClick }: HeroProps) => {
+  const navigate = useNavigate();
+  
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
       {/* Animated background gradient */}
@@ -45,10 +48,11 @@ const Hero = ({ onCTAClick }: HeroProps) => {
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
             <Button 
               size="lg" 
-              onClick={() => onCTAClick("I want to deploy my app to Cloud Run")}
+              onClick={() => navigate('/deploy')}
               className="text-lg px-8 py-6 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity group"
             >
-              Try ServerGem Free
+              <Rocket className="mr-2 h-5 w-5" />
+              Get Started
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Button>
             <Button 
@@ -57,7 +61,7 @@ const Hero = ({ onCTAClick }: HeroProps) => {
               onClick={() => onCTAClick("Show me a demo deployment")}
               className="text-lg px-8 py-6 border-primary/30 hover:bg-primary/10"
             >
-              Watch 3-Min Demo
+              Watch Demo
             </Button>
           </div>
           
