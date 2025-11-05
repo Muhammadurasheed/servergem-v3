@@ -34,9 +34,11 @@ app.add_middleware(
 # Store active WebSocket connections
 active_connections: dict[str, WebSocket] = {}
 
-# Initialize orchestrator
+# Initialize orchestrator with real services
 orchestrator = OrchestratorAgent(
-    gemini_api_key=os.getenv('GEMINI_API_KEY')
+    gemini_api_key=os.getenv('GEMINI_API_KEY'),
+    github_token=os.getenv('GITHUB_TOKEN'),
+    gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
 )
 
 
@@ -132,10 +134,19 @@ async def websocket_endpoint(websocket: WebSocket):
                     'timestamp': datetime.now().isoformat()
                 })
                 
-                # Process message through orchestrator
-                response = await orchestrator.process_message(message, session_id)
+                # Progress callback for real-time updates
+                async def progress_callback(update):
+                    """Stream progress updates via WebSocket"""
+                    await websocket.send_json(update)
                 
-                # Send response
+                # Process message with orchestrator (with progress streaming)
+                response = await orchestrator.process_message(
+                    message,
+                    session_id,
+                    progress_callback=progress_callback
+                )
+                
+                # Send final response
                 await websocket.send_json({
                     'type': 'message',
                     'data': response,
