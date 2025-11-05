@@ -3,19 +3,13 @@ import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import { User, Sparkles } from "lucide-react";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
+import type { ChatMessage } from "@/types/websocket";
 
 interface ChatMessageProps {
-  message: Message;
+  message: ChatMessage;
 }
 
-const ChatMessage = ({ message }: ChatMessageProps) => {
+const ChatMessageComponent = ({ message }: ChatMessageProps) => {
   const isUser = message.role === "user";
   const time = message.timestamp.toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -102,4 +96,4 @@ const ChatMessage = ({ message }: ChatMessageProps) => {
   );
 };
 
-export default ChatMessage;
+export default ChatMessageComponent;

@@ -1,17 +1,10 @@
-import { useState, useEffect, useRef } from "react";
-import { X, Minus, Sparkles, Copy, Check } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { X, Minus, Sparkles, Copy, Check, WifiOff, Loader2 } from "lucide-react";
 import confetti from "canvas-confetti";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-  actions?: Array<{ label: string; onClick: () => void }>;
-  deploymentUrl?: string;
-}
+import { useChat } from "@/hooks/useChat";
+import type { MessageAction } from "@/types/websocket";
 
 interface ChatWindowProps {
   onClose: () => void;
@@ -19,8 +12,14 @@ interface ChatWindowProps {
 }
 
 const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { 
+    messages, 
+    isConnected, 
+    isTyping, 
+    connectionStatus,
+    sendMessage,
+  } = useChat();
+  
   const [isMinimized, setIsMinimized] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -28,7 +27,7 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   // Handle initial message from CTA buttons
   useEffect(() => {
     if (initialMessage && messages.length === 0) {
-      handleSendMessage(initialMessage);
+      sendMessage(initialMessage);
     }
   }, [initialMessage]);
 
@@ -55,102 +54,49 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
     setTimeout(() => setCopiedUrl(false), 2000);
   };
 
-  const handleSendMessage = async (content: string) => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setIsLoading(true);
-
-    // Demo flow simulation
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `Hi! 👋 I'm ServerGem, your AI deployment assistant.\n\nI'll help you deploy your Node.js API to Cloud Run in minutes.\n\nFirst, I need access to your code. You can:\n1. 📁 Upload your project folder\n2. 🔗 Connect your GitHub repository\n3. 📋 Paste your repository URL\n\nWhich option works for you?`,
-        timestamp: new Date(),
-        actions: [
-          { label: "📁 Upload Project", onClick: () => handleGitHubConnect() },
-          { label: "🔗 Connect GitHub", onClick: () => handleGitHubConnect() },
-          { label: "📋 Paste URL", onClick: () => handleGitHubConnect() },
-        ],
-      };
-      setMessages((prev) => [...prev, aiMessage]);
-      setIsLoading(false);
-    }, 200);
-  };
-
-  const handleGitHubConnect = () => {
-    const userAction: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: "Connect GitHub repository",
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userAction]);
-    setIsLoading(true);
-
-    setTimeout(() => {
-      const analysisMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `Perfect! I'm analyzing your repository...\n\n✓ Framework detected: **Express.js v4.18**\n✓ Entry point: \`src/server.js\`\n✓ Dependencies: 12 packages\n✓ Database: **PostgreSQL** (via pg package)\n⚠️ No Dockerfile found (I'll create one)\n⚠️ Environment variables detected (.env file)\n\nYour app looks ready to deploy! I noticed you're using PostgreSQL.\n\nFor production on Cloud Run, I recommend:\n- **Cloud SQL** (managed PostgreSQL)\n- Automatic backups & high availability\n- ~$10/month for starter tier\n\nShould I set this up for you?`,
-        timestamp: new Date(),
-        actions: [
-          { label: "✅ Yes, set up Cloud SQL", onClick: () => handleCloudSQLSetup() },
-          { label: "❌ No, I'll use my own DB", onClick: () => handleCloudSQLSetup() },
-        ],
-      };
-      setMessages((prev) => [...prev, analysisMessage]);
-      setIsLoading(false);
-    }, 500);
-  };
-
-  const handleCloudSQLSetup = () => {
-    const userAction: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: "Yes, set up Cloud SQL",
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userAction]);
-    setIsLoading(true);
-
-    setTimeout(() => {
-      const progressMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: `Great choice! I'm configuring everything now... 🚀\n\n[✓] Creating Cloud SQL instance (my-nodejs-db)\n[✓] Generating optimized Dockerfile\n[✓] Configuring Secret Manager for credentials\n[⏳] Building container image...\n[⏳] Deploying to Cloud Run...\n\nThis usually takes 2-3 minutes. Hang tight!`,
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, progressMessage]);
-
-      setTimeout(() => {
-        triggerConfetti();
-        const successMessage: Message = {
-          id: (Date.now() + 2).toString(),
-          role: "assistant",
-          content: `🎉 **Deployment Successful!**\n\nYour API is live at:\n\nI've configured:\n✅ Auto HTTPS\n✅ Database connection (secure via Cloud SQL proxy)\n✅ Auto-scaling (0-10 instances)\n✅ Health checks\n✅ Monitoring & logging\n\n**What's next?**\n- Test your endpoints\n- Set up CI/CD for automatic deployments\n- Add a custom domain\n- Configure monitoring alerts\n\nTry your API now, or ask me anything!`,
-          timestamp: new Date(),
-          deploymentUrl: "https://my-api-abc123.run.app",
-          actions: [
-            { label: "📊 View Deployment Logs", onClick: () => {} },
-            { label: "🔄 Set Up CI/CD", onClick: () => {} },
-            { label: "🌐 Add Custom Domain", onClick: () => {} },
-          ],
-        };
-        setMessages((prev) => [...prev, successMessage]);
-        setIsLoading(false);
-      }, 2000);
-    }, 1000);
+  const handleActionClick = (action: MessageAction) => {
+    if (action.action) {
+      sendMessage(action.action);
+    } else if (action.url) {
+      window.open(action.url, '_blank');
+    }
   };
 
   const handleQuickAction = (action: string) => {
-    handleSendMessage(action);
+    sendMessage(action);
+  };
+
+  // Get connection status display
+  const getConnectionStatusText = () => {
+    switch (connectionStatus.state) {
+      case 'connecting':
+        return 'Connecting...';
+      case 'connected':
+        return 'Online • Ready to help';
+      case 'reconnecting':
+        return `Reconnecting (${connectionStatus.reconnectAttempt || 1})...`;
+      case 'disconnected':
+        return 'Offline';
+      case 'error':
+        return 'Connection Error';
+      default:
+        return 'Initializing...';
+    }
+  };
+
+  const getConnectionIndicatorColor = () => {
+    switch (connectionStatus.state) {
+      case 'connected':
+        return 'bg-green-500';
+      case 'connecting':
+      case 'reconnecting':
+        return 'bg-yellow-500 animate-pulse';
+      case 'error':
+      case 'disconnected':
+        return 'bg-red-500';
+      default:
+        return 'bg-gray-500';
+    }
   };
 
   return (
@@ -174,12 +120,16 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <Sparkles className="w-6 h-6 text-[#8b5cf6]" />
-              <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-background animate-pulse" />
+              <Sparkles className="w-6 h-6 text-[hsl(var(--secondary))]" />
+              <span className={`absolute -top-1 -right-1 w-3 h-3 ${getConnectionIndicatorColor()} rounded-full border-2 border-background`} />
             </div>
             <div>
               <h3 className="font-semibold text-foreground">ServerGem AI Assistant</h3>
-              <p className="text-xs text-muted-foreground">Online • Ready to help</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-2">
+                {connectionStatus.state === 'connecting' && <Loader2 className="w-3 h-3 animate-spin" />}
+                {connectionStatus.state === 'error' && <WifiOff className="w-3 h-3" />}
+                {getConnectionStatusText()}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -218,22 +168,22 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
                 </div>
                 <div className="space-y-2 w-full max-w-xs">
                   <button
-                    onClick={() => handleQuickAction("Deploy a Flask app")}
-                    className="w-full px-4 py-3 bg-accent/50 hover:bg-accent rounded-lg text-sm font-medium transition-colors text-left"
+                    onClick={() => handleQuickAction("I want to deploy my app to Cloud Run")}
+                    className="w-full px-4 py-3 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg text-sm font-medium transition-colors text-left"
                   >
-                    🐍 Deploy a Flask app
+                    🚀 Deploy my app
                   </button>
                   <button
-                    onClick={() => handleQuickAction("Fix a deployment error")}
-                    className="w-full px-4 py-3 bg-accent/50 hover:bg-accent rounded-lg text-sm font-medium transition-colors text-left"
+                    onClick={() => handleQuickAction("Help me debug a deployment error")}
+                    className="w-full px-4 py-3 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg text-sm font-medium transition-colors text-left"
                   >
-                    🔧 Fix a deployment error
+                    🔧 Debug deployment
                   </button>
                   <button
-                    onClick={() => handleQuickAction("Set up CI/CD")}
-                    className="w-full px-4 py-3 bg-accent/50 hover:bg-accent rounded-lg text-sm font-medium transition-colors text-left"
+                    onClick={() => handleQuickAction("Optimize my Cloud Run costs")}
+                    className="w-full px-4 py-3 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg text-sm font-medium transition-colors text-left"
                   >
-                    🚀 Set up CI/CD
+                    💰 Optimize costs
                   </button>
                 </div>
               </div>
@@ -260,13 +210,13 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
                         </button>
                       </div>
                     )}
-                    {message.actions && (
+                    {message.actions && message.actions.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-4 ml-10">
-                        {message.actions.map((action, idx) => (
+                        {message.actions.map((action) => (
                           <button
-                            key={idx}
-                            onClick={action.onClick}
-                            className="px-4 py-2 bg-accent/50 hover:bg-accent rounded-lg text-sm font-medium transition-colors"
+                            key={action.id}
+                            onClick={() => handleActionClick(action)}
+                            className="px-4 py-2 bg-accent/10 hover:bg-accent/20 border border-accent/30 rounded-lg text-sm font-medium transition-colors"
                           >
                             {action.label}
                           </button>
@@ -275,16 +225,16 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
                     )}
                   </div>
                 ))}
-                {isLoading && (
+                {isTyping && (
                   <div className="flex items-start gap-2">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#8b5cf6] to-[#06b6d4] flex items-center justify-center flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[hsl(var(--secondary))] to-[hsl(var(--accent))] flex items-center justify-center flex-shrink-0">
                       <Sparkles className="w-4 h-4 text-white" />
                     </div>
-                    <div className="bg-[rgba(30,41,59,0.8)] border border-[rgba(139,92,246,0.3)] rounded-2xl rounded-tl-sm px-4 py-3">
+                    <div className="bg-card/80 border border-border rounded-2xl rounded-tl-sm px-4 py-3">
                       <div className="flex gap-1">
-                        <span className="w-2 h-2 bg-[#8b5cf6] rounded-full animate-pulse" style={{ animationDelay: '0s' }} />
-                        <span className="w-2 h-2 bg-[#8b5cf6] rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
-                        <span className="w-2 h-2 bg-[#8b5cf6] rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                        <span className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0s' }} />
+                        <span className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                        <span className="w-2 h-2 bg-primary rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
                       </div>
                     </div>
                   </div>
@@ -295,7 +245,10 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
           </div>
 
           {/* Input Area */}
-          <ChatInput onSendMessage={handleSendMessage} disabled={isLoading} />
+          <ChatInput 
+            onSendMessage={sendMessage} 
+            disabled={!isConnected || isTyping} 
+          />
         </>
       )}
     </div>

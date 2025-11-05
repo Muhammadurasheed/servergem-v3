@@ -80,7 +80,7 @@ async def chat(message: ChatMessage):
 
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time chat"""
+    """WebSocket endpoint for real-time chat with heartbeat support"""
     
     session_id = None
     
@@ -89,6 +89,12 @@ async def websocket_endpoint(websocket: WebSocket):
         
         # Receive initial connection message with session_id
         init_message = await websocket.receive_json()
+        message_type = init_message.get('type')
+        
+        if message_type != 'init':
+            await websocket.close(code=1008, reason="Expected init message")
+            return
+        
         session_id = init_message.get('session_id', 'unknown')
         
         active_connections[session_id] = websocket
@@ -97,38 +103,52 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.send_json({
             'type': 'connected',
             'session_id': session_id,
-            'message': 'Connected to ServerGem'
+            'message': 'Connected to ServerGem AI - Ready to deploy!'
         })
         
         # Message loop
         while True:
             data = await websocket.receive_json()
-            message = data.get('message')
+            msg_type = data.get('type')
             
-            if not message:
+            # Handle ping/pong heartbeat
+            if msg_type == 'ping':
+                await websocket.send_json({
+                    'type': 'pong',
+                    'timestamp': datetime.now().isoformat()
+                })
                 continue
             
-            # Send typing indicator
-            await websocket.send_json({
-                'type': 'typing',
-                'timestamp': datetime.now().isoformat()
-            })
-            
-            # Process message
-            response = await orchestrator.process_message(message, session_id)
-            
-            # Send response
-            await websocket.send_json({
-                'type': 'message',
-                'data': response,
-                'timestamp': datetime.now().isoformat()
-            })
+            # Handle chat messages
+            if msg_type == 'message':
+                message = data.get('message')
+                
+                if not message:
+                    continue
+                
+                # Send typing indicator
+                await websocket.send_json({
+                    'type': 'typing',
+                    'timestamp': datetime.now().isoformat()
+                })
+                
+                # Process message through orchestrator
+                response = await orchestrator.process_message(message, session_id)
+                
+                # Send response
+                await websocket.send_json({
+                    'type': 'message',
+                    'data': response,
+                    'timestamp': datetime.now().isoformat()
+                })
     
     except WebSocketDisconnect:
         if session_id and session_id in active_connections:
             del active_connections[session_id]
+            print(f"Client {session_id} disconnected")
     
     except Exception as e:
+        print(f"WebSocket error for session {session_id}: {str(e)}")
         if session_id and session_id in active_connections:
             try:
                 await websocket.send_json({
