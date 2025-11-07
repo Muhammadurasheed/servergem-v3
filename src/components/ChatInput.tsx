@@ -8,14 +8,9 @@ interface ChatInputProps {
 
 const ChatInput = ({ onSendMessage, disabled = false }: ChatInputProps) => {
   const [message, setMessage] = useState("");
-  const [charCount, setCharCount] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
-  // Debug: Log ChatInput props and state
-  useEffect(() => {
-    console.log('[ChatInput] disabled prop:', disabled, 'message:', message, 'button will be disabled:', !message.trim() || disabled);
-  }, [disabled, message]);
 
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -23,45 +18,44 @@ const ChatInput = ({ onSendMessage, disabled = false }: ChatInputProps) => {
     }
   }, [message]);
 
-  const handleSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    console.log('[ChatInput] handleSubmit called, message:', message, 'disabled:', disabled);
-    if (message.trim() && !disabled) {
-      console.log('[ChatInput] Sending message:', message);
-      onSendMessage(message.trim());
+  const handleSend = () => {
+    console.log('[ChatInput] handleSend - message:', message, 'disabled:', disabled);
+    const trimmed = message.trim();
+    if (trimmed && !disabled) {
+      console.log('[ChatInput] Sending message:', trimmed);
+      onSendMessage(trimmed);
       setMessage("");
-      setCharCount(0);
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     } else {
-      console.log('[ChatInput] Blocked: message empty or disabled');
+      console.log('[ChatInput] Send blocked - empty or disabled');
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      handleSend();
     }
   };
-  
-  const handleButtonClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    console.log('[ChatInput] Button clicked!');
-    handleSubmit();
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    console.log('[ChatInput] Input changed:', newValue.substring(0, 50));
+    setMessage(newValue);
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newMessage = e.target.value;
-    setMessage(newMessage);
-    setCharCount(newMessage.length);
-  };
+  const isButtonDisabled = !message.trim() || disabled;
+  console.log('[ChatInput] Render - message length:', message.length, 'disabled:', disabled, 'buttonDisabled:', isButtonDisabled);
 
   return (
-    <div className="border-t border-[rgba(139,92,246,0.3)] bg-background/50 p-4">
-      <form onSubmit={handleSubmit} className="flex items-end gap-2">
+    <div className="border-t border-border/50 bg-background/50 p-4">
+      <div className="flex items-end gap-2">
         {/* File Upload (Future) */}
         <button
           type="button"
-          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors mb-0.5"
+          className="p-2 text-muted-foreground hover:text-foreground hover:bg-accent rounded-lg transition-colors mb-0.5 flex-shrink-0"
           aria-label="Attach file"
           disabled
           title="Coming soon: GitHub integration"
@@ -74,56 +68,43 @@ const ChatInput = ({ onSendMessage, disabled = false }: ChatInputProps) => {
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyPress}
             placeholder="Ask me to deploy your app..."
             disabled={disabled}
             rows={1}
-            className={`
+            className="
               w-full px-4 py-3 pr-12
-              bg-accent/30 border border-[rgba(139,92,246,0.2)]
+              bg-accent/30 border border-border/50
               rounded-xl resize-none
               text-sm text-foreground placeholder:text-muted-foreground
-              focus:outline-none focus:ring-2 focus:ring-[#8b5cf6]/50 focus:border-transparent
+              focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-transparent
               disabled:opacity-50 disabled:cursor-not-allowed
               transition-all
-            `}
+            "
             style={{ maxHeight: "96px" }}
           />
-          {/* Character Count */}
-          {charCount > 200 && (
-            <span
-              className={`
-                absolute bottom-2 right-2 text-xs
-                transition-opacity duration-200
-                ${charCount > 500 ? "text-orange-500" : "text-muted-foreground"}
-              `}
-            >
-              {charCount}
-            </span>
-          )}
         </div>
 
         {/* Send Button */}
         <button
           type="button"
-          onClick={handleButtonClick}
-          disabled={!message.trim() || disabled}
-          className={`
-            p-3 rounded-xl
+          onClick={handleSend}
+          disabled={isButtonDisabled}
+          className="
+            p-3 rounded-xl flex-shrink-0
             bg-gradient-to-br from-[#3b82f6] to-[#8b5cf6]
             text-white font-medium
             transition-all duration-200
             disabled:opacity-50 disabled:cursor-not-allowed
-            enabled:hover:scale-105 enabled:hover:shadow-[0_0_20px_rgba(139,92,246,0.6)]
-            enabled:active:scale-95
-            enabled:cursor-pointer
-          `}
+            hover:enabled:scale-105 hover:enabled:shadow-lg
+            active:enabled:scale-95
+          "
           aria-label="Send message"
         >
           <Send size={20} />
         </button>
-      </form>
+      </div>
     </div>
   );
 };
