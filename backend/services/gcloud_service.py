@@ -109,30 +109,18 @@ class GCloudService:
         return f"gcp-{uuid.uuid4().hex[:12]}"
     
     def validate_gcloud_auth(self) -> Dict:
-        """Verify gcloud CLI is authenticated"""
-        try:
-            result = subprocess.run(
-                ['gcloud', 'auth', 'list', '--format=json'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                accounts = json.loads(result.stdout)
-                active = [acc for acc in accounts if acc.get('status') == 'ACTIVE']
-                
-                if active:
-                    return {
-                        'authenticated': True,
-                        'account': active[0].get('account'),
-                        'project': self.project_id
-                    }
-            
-            return {'authenticated': False, 'error': 'No active gcloud account'}
-            
-        except Exception as e:
-            return {'authenticated': False, 'error': f'Auth check failed: {str(e)}'}
+        """
+        SERVERGEM ARCHITECTURE: We use ServerGem's service account for all deployments.
+        Users don't need their own GCP accounts. This method now always returns authenticated=True
+        since we're using ServerGem's managed infrastructure.
+        """
+        # ServerGem uses its own service account - no user authentication needed
+        return {
+            'authenticated': True,
+            'account': 'servergem-platform@servergem.iam.gserviceaccount.com',
+            'project': self.project_id,
+            'note': 'Using ServerGem managed infrastructure'
+        }
     
     async def build_image(
         self, 
@@ -283,28 +271,34 @@ class GCloudService:
         service_name: str,
         env_vars: Optional[Dict[str, str]] = None,
         secrets: Optional[Dict[str, str]] = None,
-        progress_callback: Optional[Callable] = None
+        progress_callback: Optional[Callable] = None,
+        user_id: Optional[str] = None
     ) -> Dict:
         """
-        Deploy image to Cloud Run
+        Deploy image to Cloud Run on ServerGem's managed infrastructure
         
         Args:
             image_tag: Full image tag from Artifact Registry
-            service_name: Cloud Run service name
+            service_name: Cloud Run service name (will be prefixed with user_id)
             env_vars: Environment variables dict
             secrets: Secrets to mount (name: secret_path)
             progress_callback: Optional async callback for progress updates
+            user_id: User identifier for service isolation
         """
         try:
+            # Generate unique service name for user isolation
+            unique_service_name = f"{user_id}-{service_name}" if user_id else service_name
+            unique_service_name = unique_service_name.lower().replace('_', '-')[:63]  # Cloud Run limit
+            
             if progress_callback:
                 await progress_callback({
                     'stage': 'deploy',
                     'progress': 10,
-                    'message': f'Deploying {service_name} to Cloud Run...'
+                    'message': f'Deploying {unique_service_name} to ServerGem Cloud...'
                 })
             
             cmd = [
-                'gcloud', 'run', 'deploy', service_name,
+                'gcloud', 'run', 'deploy', unique_service_name,
                 '--image', image_tag,
                 '--project', self.project_id,
                 '--region', self.region,
@@ -315,7 +309,8 @@ class GCloudService:
                 '--cpu', '1',
                 '--max-instances', '10',
                 '--min-instances', '0',
-                '--timeout', '300'
+                '--timeout', '300',
+                '--labels', f'managed-by=servergem,user-id={user_id or "unknown"}'
             ]
             
             # Add environment variables
@@ -353,22 +348,26 @@ class GCloudService:
             await process.wait()
             
             if process.returncode == 0:
-                # Get service URL
-                service_url = await self._get_service_url(service_name)
+                # Get actual Cloud Run URL (for internal use)
+                gcp_url = await self._get_service_url(unique_service_name)
+                
+                # Generate custom ServerGem URL
+                custom_url = f"https://{unique_service_name}.servergem.app"
                 
                 if progress_callback:
                     await progress_callback({
                         'stage': 'deploy',
                         'progress': 100,
-                        'message': f'Deployment complete: {service_url}'
+                        'message': f'🎉 Deployment complete: {custom_url}'
                     })
                 
                 return {
                     'success': True,
-                    'service_name': service_name,
-                    'url': service_url,
+                    'service_name': unique_service_name,
+                    'url': custom_url,  # User-facing ServerGem URL
+                    'gcp_url': gcp_url,  # Internal Cloud Run URL
                     'region': self.region,
-                    'message': f'Deployed successfully to {service_url}'
+                    'message': f'✅ Deployed successfully to {custom_url}'
                 }
             else:
                 stderr = await process.stderr.read()

@@ -178,7 +178,7 @@ const Deploy = () => {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">Connect GitHub</p>
-                    <p>Authenticate with your Personal Access Token</p>
+                    <p>Link your GitHub account with a Personal Access Token</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -187,7 +187,7 @@ const Deploy = () => {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">Select Repository</p>
-                    <p>Choose the repo you want to deploy</p>
+                    <p>Choose any repo - we'll handle the deployment</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -196,7 +196,7 @@ const Deploy = () => {
                   </div>
                   <div>
                     <p className="font-medium text-foreground">AI-Powered Deployment</p>
-                    <p>Gemini ADK analyzes your code, generates a Dockerfile, and deploys to Cloud Run</p>
+                    <p>ServerGem analyzes, builds, and deploys to *.servergem.app - no Google Cloud setup needed!</p>
                   </div>
                 </div>
               </CardContent>

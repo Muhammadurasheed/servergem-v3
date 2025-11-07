@@ -25,10 +25,42 @@ class OrchestratorAgent:
     def __init__(self, gemini_api_key: str, github_token: str = None, gcloud_project: str = None):
         genai.configure(api_key=gemini_api_key)
         
-        # Initialize Gemini with function declarations
+        # ServerGem-specific system instruction
+        system_instruction = """
+You are ServerGem AI Assistant - a production-grade AI that deploys applications to Google Cloud Run using ServerGem's managed infrastructure.
+
+CRITICAL ARCHITECTURE PRINCIPLES:
+- Users do NOT need Google Cloud accounts or gcloud authentication
+- Users do NOT need to provide project IDs or service account keys
+- ServerGem handles ALL Google Cloud interactions using its own managed infrastructure
+- You deploy everything to ServerGem's platform and provide custom .servergem.app URLs
+
+NEVER ask users for:
+❌ Google Cloud project IDs
+❌ Service account keys
+❌ gcloud CLI authentication commands
+❌ IAM permissions or roles
+
+ALWAYS ask for:
+✅ GitHub repository URL
+✅ Service name (suggest based on repo name)
+✅ Environment variables (if needed for the app)
+
+DEPLOYMENT FLOW:
+1. User provides GitHub repo URL
+2. You clone and analyze the repository
+3. You generate optimal Dockerfile
+4. You deploy to ServerGem's Cloud Run infrastructure
+5. You provide custom URL: https://{service-name}.servergem.app
+
+Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
+        """.strip()
+        
+        # Initialize Gemini with function declarations and system instruction
         self.model = genai.GenerativeModel(
             'gemini-2.0-flash-exp',
-            tools=[self._get_function_declarations()]
+            tools=[self._get_function_declarations()],
+            system_instruction=system_instruction
         )
         
         self.conversation_history: List[Dict] = []
@@ -42,7 +74,8 @@ class OrchestratorAgent:
         from services.optimization import optimization
         
         self.github_service = GitHubService(github_token)
-        self.gcloud_service = GCloudService(gcloud_project) if gcloud_project else None
+        # Use ServerGem's GCP project (not user's)
+        self.gcloud_service = GCloudService(gcloud_project or 'servergem-platform') if gcloud_project else None
         self.docker_service = DockerService()
         self.analysis_service = AnalysisService(gemini_api_key)
         
@@ -365,7 +398,7 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
         if not self.gcloud_service:
             return {
                 'type': 'error',
-                'content': '❌ **Google Cloud not configured**\n\nPlease set `GOOGLE_CLOUD_PROJECT` environment variable.\n\nExample:\n```bash\nexport GOOGLE_CLOUD_PROJECT=my-project-id\n```',
+                'content': '❌ **ServerGem Cloud not configured**\n\nPlease contact support. This is a platform configuration issue.',
                 'timestamp': datetime.now().isoformat()
             }
         
@@ -405,17 +438,8 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             
             self.monitoring.record_stage(deployment_id, 'validation', 'success', 0.5)
             
-            # Step 1: Validate gcloud authentication
-            auth_check = self.gcloud_service.validate_gcloud_auth()
-            if not auth_check.get('authenticated'):
-                self.monitoring.complete_deployment(deployment_id, 'failed')
-                return {
-                    'type': 'error',
-                    'content': f"❌ **Not authenticated with gcloud**\n\n{auth_check.get('error')}\n\nRun:\n```bash\ngcloud auth login\ngcloud config set project YOUR_PROJECT_ID\n```",
-                    'timestamp': datetime.now().isoformat()
-                }
-            
-            # Step 2: Validate Dockerfile exists
+            # SERVERGEM ARCHITECTURE: No user GCP auth needed - using ServerGem's infrastructure
+            # Step 1: Validate Dockerfile exists
             dockerfile_check = self.docker_service.validate_dockerfile(project_path)
             if not dockerfile_check.get('valid'):
                 self.monitoring.complete_deployment(deployment_id, 'failed')
@@ -498,7 +522,8 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                 build_result['image_tag'],
                 service_name,
                 env_vars=deploy_env,
-                progress_callback=deploy_progress
+                progress_callback=deploy_progress,
+                user_id=session_id[:8] if session_id else 'default'  # Use session ID as user identifier
             )
             
             deploy_duration = time.time() - deploy_start

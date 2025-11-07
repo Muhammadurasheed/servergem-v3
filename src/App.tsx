@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Deploy from "./pages/Deploy";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 const queryClient = new QueryClient();
 
@@ -18,7 +19,14 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
-          <Route path="/deploy" element={<Deploy />} />
+          <Route
+            path="/deploy"
+            element={
+              <ProtectedRoute>
+                <Deploy />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/auth" element={<Auth />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
