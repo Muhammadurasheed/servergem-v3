@@ -14,6 +14,14 @@ const Index = () => {
   const [unreadCount] = useState(0);
 
   const handleCTAClick = (message: string) => {
+    // Check if user is authenticated before opening chat
+    const isAuthenticated = localStorage.getItem('servergem_user');
+    if (!isAuthenticated) {
+      // Redirect to auth page
+      window.location.href = '/auth';
+      return;
+    }
+    
     setInitialMessage(message);
     setIsChatOpen(true);
   };

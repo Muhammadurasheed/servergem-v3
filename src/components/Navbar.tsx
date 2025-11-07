@@ -72,9 +72,9 @@ const Navbar = () => {
             <div className="ml-2 pl-2 border-l border-border/50 flex items-center gap-2">
               {isAuthenticated ? (
                 <>
-                  <Button variant="ghost" size="sm" onClick={() => navigate('/deploy')} className="gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => navigate('/dashboard')} className="gap-2">
                     <Rocket className="h-4 w-4" />
-                    Deploy
+                    Dashboard
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -96,6 +96,10 @@ const Navbar = () => {
                         </div>
                       </DropdownMenuLabel>
                       <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate('/dashboard')}>
+                        <Rocket className="mr-2 h-4 w-4" />
+                        <span>Dashboard</span>
+                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/deploy')}>
                         <Rocket className="mr-2 h-4 w-4" />
                         <span>Deploy</span>
@@ -155,9 +159,9 @@ const Navbar = () => {
                     <p className="text-sm font-medium">{user?.displayName}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                   </div>
-                  <Button variant="default" className="w-full gap-2" onClick={() => { navigate('/deploy'); setIsOpen(false); }}>
+                  <Button variant="default" className="w-full gap-2" onClick={() => { navigate('/dashboard'); setIsOpen(false); }}>
                     <Rocket className="h-4 w-4" />
-                    Deploy
+                    Dashboard
                   </Button>
                   <Button variant="outline" className="w-full gap-2" onClick={() => { signOut(); setIsOpen(false); }}>
                     <LogOut className="h-4 w-4" />
