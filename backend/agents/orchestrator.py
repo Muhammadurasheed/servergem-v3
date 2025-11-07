@@ -361,6 +361,7 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
         
         # Generate deployment ID for tracking
         deployment_id = f"deploy-{uuid.uuid4().hex[:8]}"
+        start_time = time.time()
         
         try:
             # Start monitoring
@@ -567,18 +568,6 @@ What would you like to do next?
                 },
                 'deployment_url': deploy_result['url'],
                 'actions': [
-✅ Auto-scaling configured
-✅ Health checks active
-✅ Monitoring enabled
-
-What would you like to do next?
-            """.strip()
-            
-            return {
-                'type': 'deployment_complete',
-                'content': content,
-                'data': deploy_result,
-                'actions': [
                     {
                         'id': 'view_logs',
                         'label': '📊 View Logs',
@@ -602,6 +591,7 @@ What would you like to do next?
             }
             
         except Exception as e:
+            self.monitoring.complete_deployment(deployment_id, 'failed')
             print(f"[Orchestrator] Deployment error: {str(e)}")
             import traceback
             traceback.print_exc()
