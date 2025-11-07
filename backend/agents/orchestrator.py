@@ -152,19 +152,29 @@ class OrchestratorAgent:
             )
             
             # Check if Gemini wants to call a function
-            if response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call'):
-                        # Route to real service handler
-                        return await self._handle_function_call(
-                            part.function_call,
-                            progress_callback=progress_callback
-                        )
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                if hasattr(candidate, 'content') and hasattr(candidate.content, 'parts'):
+                    for part in candidate.content.parts:
+                        if hasattr(part, 'function_call') and part.function_call:
+                            # Route to real service handler
+                            return await self._handle_function_call(
+                                part.function_call,
+                                progress_callback=progress_callback
+                            )
             
             # Regular text response (no function call needed)
+            response_text = ''
+            if hasattr(response, 'text') and response.text:
+                response_text = response.text
+            elif hasattr(response, 'candidates') and response.candidates:
+                parts = response.candidates[0].content.parts
+                if parts:
+                    response_text = ''.join([part.text for part in parts if hasattr(part, 'text')])
+            
             return {
                 'type': 'message',
-                'content': response.text,
+                'content': response_text if response_text else 'I received your message but couldn\'t generate a response. Please try again.',
                 'timestamp': datetime.now().isoformat()
             }
             

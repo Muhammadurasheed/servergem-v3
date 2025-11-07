@@ -36,7 +36,28 @@ class CodeAnalyzerAgent:
         
         try:
             response = await self.model.generate_content_async(analysis_prompt)
-            analysis = json.loads(response.text)
+            
+            # Properly extract text from Gemini response
+            response_text = None
+            if hasattr(response, 'text') and response.text:
+                response_text = response.text
+            elif hasattr(response, 'candidates') and response.candidates:
+                parts = response.candidates[0].content.parts
+                if parts:
+                    response_text = ''.join([part.text for part in parts if hasattr(part, 'text')])
+            
+            if not response_text:
+                print("[CodeAnalyzer] No text in Gemini response, using fallback")
+                return self._fallback_analysis(project_path, file_structure)
+            
+            # Extract JSON from response (handle markdown code blocks)
+            response_text = response_text.strip()
+            if '```json' in response_text:
+                response_text = response_text.split('```json')[1].split('```')[0].strip()
+            elif '```' in response_text:
+                response_text = response_text.split('```')[1].split('```')[0].strip()
+            
+            analysis = json.loads(response_text)
             
             # Enhance with static analysis
             analysis['env_vars'] = self._extract_env_vars(project_path)
@@ -45,6 +66,7 @@ class CodeAnalyzerAgent:
             return analysis
         
         except Exception as e:
+            print(f"[CodeAnalyzer] Error: {str(e)}")
             # Fallback to static analysis
             return self._fallback_analysis(project_path, file_structure)
     

@@ -187,8 +187,35 @@ Return ONLY the Dockerfile content, no markdown formatting.
         
         response = await self.model.generate_content_async(prompt)
         
+        # Properly extract text from Gemini response
+        dockerfile_content = None
+        if hasattr(response, 'text') and response.text:
+            dockerfile_content = response.text
+        elif hasattr(response, 'candidates') and response.candidates:
+            parts = response.candidates[0].content.parts
+            if parts:
+                dockerfile_content = ''.join([part.text for part in parts if hasattr(part, 'text')])
+        
+        if not dockerfile_content:
+            # Fallback to basic template
+            dockerfile_content = f"""FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+ENV PORT=8080
+EXPOSE 8080
+CMD ["python", "{analysis.get('entry_point', 'app.py')}"]
+"""
+        
+        # Clean up markdown if present
+        if '```dockerfile' in dockerfile_content:
+            dockerfile_content = dockerfile_content.split('```dockerfile')[1].split('```')[0].strip()
+        elif '```' in dockerfile_content:
+            dockerfile_content = dockerfile_content.split('```')[1].split('```')[0].strip()
+        
         return {
-            'dockerfile': response.text,
+            'dockerfile': dockerfile_content,
             'optimizations': ["🤖 AI-generated for your specific stack"],
             'size_estimate': '~200MB'
         }
