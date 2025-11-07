@@ -16,22 +16,23 @@ import {
   HardDrive,
   Globe,
   ArrowUpRight,
-  Calendar
+  Calendar,
+  Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useUsage } from '@/hooks/useUsage';
 
 const Usage = () => {
   const navigate = useNavigate();
-
-  // Mock usage data - In production, fetch from backend
-  const usage = {
-    plan: 'Free',
-    period: 'Jan 1 - Jan 31, 2024',
-    services: { current: 1, limit: 1, percentage: 100 },
-    requests: { current: 47, limit: 100, percentage: 47 },
-    memory: { current: 384, limit: 512, unit: 'MB', percentage: 75 },
-    storage: { current: 125, limit: 1000, unit: 'MB', percentage: 12.5 },
-  };
+  const { 
+    todayUsage, 
+    summary, 
+    isLoading, 
+    error,
+    getRequestsPercentage, 
+    getMemoryPercentage,
+    isApproachingLimit
+  } = useUsage();
 
   const getProgressColor = (percentage: number) => {
     if (percentage >= 90) return 'bg-red-500';
@@ -45,6 +46,40 @@ const Usage = () => {
     return 'success';
   };
 
+  if (isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
+          <Card className="p-12">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-muted-foreground">Loading usage data...</p>
+            </div>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  if (error || !todayUsage) {
+    return (
+      <DashboardLayout>
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-4">{error || 'Failed to load usage data'}</p>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  const requestsPercent = getRequestsPercentage();
+  const memoryPercent = getMemoryPercentage();
+  const planTier = todayUsage.plan_tier;
+  const limits = todayUsage.limits;
+  const usage = todayUsage.usage;
+
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8 max-w-7xl">
@@ -57,12 +92,12 @@ const Usage = () => {
             </p>
           </div>
           <Badge variant="secondary" className="text-base px-4 py-2">
-            {usage.plan} Plan
+            {planTier.charAt(0).toUpperCase() + planTier.slice(1)} Plan
           </Badge>
         </div>
 
         {/* Alert Banner */}
-        {usage.services.percentage >= 90 && (
+        {isApproachingLimit() && planTier === 'free' && (
           <Card className="border-yellow-500/50 bg-yellow-500/5 mb-6">
             <CardContent className="pt-6">
               <div className="flex items-start gap-4">
@@ -90,7 +125,7 @@ const Usage = () => {
                 <Calendar className="w-5 h-5 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-muted-foreground">Current billing period</p>
-                  <p className="font-semibold">{usage.period}</p>
+                  <p className="font-semibold">{usage.date}</p>
                 </div>
               </div>
               <Button variant="outline" onClick={() => navigate('/dashboard/pricing')}>
@@ -110,8 +145,8 @@ const Usage = () => {
                   <Globe className="w-5 h-5 text-primary" />
                   <CardTitle>Active Services</CardTitle>
                 </div>
-                <Badge variant={getAlertLevel(usage.services.percentage) === 'error' ? 'destructive' : 'secondary'}>
-                  {usage.services.current} / {usage.services.limit}
+                <Badge variant={getAlertLevel((usage.deployments / limits.max_services) * 100) === 'error' ? 'destructive' : 'secondary'}>
+                  {usage.deployments} / {limits.max_services === -1 ? '∞' : limits.max_services}
                 </Badge>
               </div>
               <CardDescription>
@@ -120,17 +155,17 @@ const Usage = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
-                <Progress value={usage.services.percentage} className="h-3" />
-                <div className={`absolute inset-0 rounded-full ${getProgressColor(usage.services.percentage)} opacity-50`} 
-                     style={{ width: `${usage.services.percentage}%` }} />
+                <Progress value={limits.max_services === -1 ? 0 : (usage.deployments / limits.max_services) * 100} className="h-3" />
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {usage.services.limit - usage.services.current} services remaining
+                  {limits.max_services === -1 ? 'Unlimited' : `${limits.max_services - usage.deployments} services remaining`}
                 </span>
-                <span className="font-semibold">{usage.services.percentage}%</span>
+                <span className="font-semibold">
+                  {limits.max_services === -1 ? '∞' : Math.round((usage.deployments / limits.max_services) * 100)}%
+                </span>
               </div>
-              {usage.services.percentage >= 90 && (
+              {usage.deployments >= limits.max_services && limits.max_services !== -1 && (
                 <div className="pt-3 border-t">
                   <p className="text-sm text-muted-foreground mb-2">
                     Upgrade to deploy more services
@@ -151,8 +186,8 @@ const Usage = () => {
                   <Activity className="w-5 h-5 text-green-500" />
                   <CardTitle>Requests Today</CardTitle>
                 </div>
-                <Badge variant={getAlertLevel(usage.requests.percentage) === 'error' ? 'destructive' : 'secondary'}>
-                  {usage.requests.current} / {usage.requests.limit}
+                <Badge variant={getAlertLevel(requestsPercent) === 'error' ? 'destructive' : 'secondary'}>
+                  {usage.requests} / {limits.max_requests_per_day === -1 ? '∞' : limits.max_requests_per_day}
                 </Badge>
               </div>
               <CardDescription>
@@ -161,17 +196,15 @@ const Usage = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
-                <Progress value={usage.requests.percentage} className="h-3" />
-                <div className={`absolute inset-0 rounded-full ${getProgressColor(usage.requests.percentage)} opacity-50`} 
-                     style={{ width: `${usage.requests.percentage}%` }} />
+                <Progress value={requestsPercent} className="h-3" />
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {usage.requests.limit - usage.requests.current} requests remaining
+                  {limits.max_requests_per_day === -1 ? 'Unlimited' : `${limits.max_requests_per_day - usage.requests} requests remaining`}
                 </span>
-                <span className="font-semibold">{usage.requests.percentage}%</span>
+                <span className="font-semibold">{limits.max_requests_per_day === -1 ? '∞' : Math.round(requestsPercent)}%</span>
               </div>
-              {usage.requests.percentage >= 70 && (
+              {requestsPercent >= 70 && limits.max_requests_per_day !== -1 && (
                 <div className="pt-3 border-t">
                   <p className="text-sm text-muted-foreground mb-2">
                     Pro plan includes unlimited requests
@@ -193,7 +226,7 @@ const Usage = () => {
                   <CardTitle>Memory Usage</CardTitle>
                 </div>
                 <Badge variant="secondary">
-                  {usage.memory.current}{usage.memory.unit} / {usage.memory.limit}{usage.memory.unit}
+                  {usage.memory_used_mb}MB / {limits.max_memory_mb}MB
                 </Badge>
               </div>
               <CardDescription>
@@ -202,46 +235,39 @@ const Usage = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="relative">
-                <Progress value={usage.memory.percentage} className="h-3" />
-                <div className={`absolute inset-0 rounded-full ${getProgressColor(usage.memory.percentage)} opacity-50`} 
-                     style={{ width: `${usage.memory.percentage}%` }} />
+                <Progress value={memoryPercent} className="h-3" />
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {usage.memory.limit - usage.memory.current}{usage.memory.unit} available
+                  {limits.max_memory_mb - usage.memory_used_mb}MB available
                 </span>
-                <span className="font-semibold">{Math.round(usage.memory.percentage)}%</span>
+                <span className="font-semibold">{Math.round(memoryPercent)}%</span>
               </div>
             </CardContent>
           </Card>
 
-          {/* Storage */}
+          {/* Bandwidth */}
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <HardDrive className="w-5 h-5 text-purple-500" />
-                  <CardTitle>Storage</CardTitle>
+                  <CardTitle>Bandwidth</CardTitle>
                 </div>
                 <Badge variant="secondary">
-                  {usage.storage.current}{usage.storage.unit} / {usage.storage.limit}{usage.storage.unit}
+                  {usage.bandwidth_gb.toFixed(2)}GB
                 </Badge>
               </div>
               <CardDescription>
-                Container image storage
+                Data transfer usage
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="relative">
-                <Progress value={usage.storage.percentage} className="h-3" />
-                <div className={`absolute inset-0 rounded-full ${getProgressColor(usage.storage.percentage)} opacity-50`} 
-                     style={{ width: `${usage.storage.percentage}%` }} />
-              </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {usage.storage.limit - usage.storage.current}{usage.storage.unit} available
+                  This month
                 </span>
-                <span className="font-semibold">{Math.round(usage.storage.percentage)}%</span>
+                <span className="font-semibold">{usage.bandwidth_gb.toFixed(2)}GB</span>
               </div>
             </CardContent>
           </Card>

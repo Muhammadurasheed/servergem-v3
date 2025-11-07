@@ -3,7 +3,6 @@
  * Shows all user's deployed services with real-time status
  */
 
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,53 +19,16 @@ import {
   TrendingUp,
   Plus,
   Globe,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react';
 import { toast } from 'sonner';
-
-// Mock deployment data - In production, fetch from backend/database
-const mockDeployments = [
-  {
-    id: '1',
-    name: 'my-ecommerce-api',
-    url: 'https://ahmed-my-ecommerce-api.servergem.app',
-    status: 'live',
-    deployedAt: '2 hours ago',
-    requestsToday: 47,
-    memory: '384MB / 512MB',
-    uptime: '99.8%',
-    framework: 'Node.js',
-    lastUpdate: '2024-01-15T10:30:00Z'
-  },
-  {
-    id: '2',
-    name: 'portfolio-site',
-    url: 'https://ahmed-portfolio-site.servergem.app',
-    status: 'live',
-    deployedAt: '1 day ago',
-    requestsToday: 12,
-    memory: '256MB / 512MB',
-    uptime: '100%',
-    framework: 'React',
-    lastUpdate: '2024-01-14T15:20:00Z'
-  },
-  {
-    id: '3',
-    name: 'ml-model-service',
-    url: 'https://ahmed-ml-model-service.servergem.app',
-    status: 'deploying',
-    deployedAt: 'In progress',
-    requestsToday: 0,
-    memory: '0MB / 2GB',
-    uptime: '-',
-    framework: 'Python',
-    lastUpdate: '2024-01-15T12:00:00Z'
-  },
-];
+import { useDeployments } from '@/hooks/useDeployments';
+import { formatDistanceToNow } from 'date-fns';
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [deployments, setDeployments] = useState(mockDeployments);
+  const { deployments, isLoading, error, deleteDeployment } = useDeployments();
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -86,18 +48,41 @@ const Dashboard = () => {
     }
   };
 
-  const handleRedeploy = (deployment: typeof mockDeployments[0]) => {
-    toast.info(`Redeploying ${deployment.name}...`);
-    // In production: trigger redeploy via API
+  const handleRedeploy = async (deploymentId: string, name: string) => {
+    toast.info(`Redeploying ${name}...`);
+    // Implementation in Phase 3
   };
 
-  const handleDelete = (deployment: typeof mockDeployments[0]) => {
-    if (confirm(`Delete ${deployment.name}? This cannot be undone.`)) {
-      setDeployments(prev => prev.filter(d => d.id !== deployment.id));
-      toast.success(`${deployment.name} deleted successfully`);
-      // In production: delete via API
+  const handleDelete = async (deploymentId: string, name: string) => {
+    if (confirm(`Delete ${name}? This cannot be undone.`)) {
+      try {
+        await deleteDeployment(deploymentId);
+      } catch (err) {
+        // Error already shown by hook
+      }
     }
   };
+
+  const formatDate = (dateString: string) => {
+    try {
+      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+    } catch {
+      return dateString;
+    }
+  };
+
+  if (error) {
+    return (
+      <DashboardLayout>
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
+          <Card className="p-8 text-center">
+            <p className="text-destructive mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>Retry</Button>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -136,7 +121,7 @@ const Dashboard = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Requests Today</p>
                   <p className="text-2xl font-bold">
-                    {deployments.reduce((sum, d) => sum + d.requestsToday, 0)}
+                    {deployments.reduce((sum, d) => sum + d.request_count, 0)}
                   </p>
                 </div>
                 <Activity className="w-8 h-8 text-green-500" />
@@ -200,8 +185,7 @@ const Dashboard = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <div className={`w-3 h-3 rounded-full ${getStatusColor(deployment.status)}`} />
-                        <CardTitle className="text-xl">{deployment.name}</CardTitle>
-                        <Badge variant="secondary">{deployment.framework}</Badge>
+                        <CardTitle className="text-xl">{deployment.service_name}</CardTitle>
                       </div>
                       <CardDescription className="flex items-center gap-2">
                         <Globe className="w-4 h-4" />
@@ -229,7 +213,7 @@ const Dashboard = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRedeploy(deployment)}
+                        onClick={() => handleRedeploy(deployment.id, deployment.service_name)}
                         disabled={deployment.status === 'deploying'}
                       >
                         <RotateCw className="w-4 h-4" />
@@ -237,14 +221,14 @@ const Dashboard = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => navigate(`/dashboard/deployments/${deployment.id}/settings`)}
+                        onClick={() => navigate(`/dashboard/settings`)}
                       >
                         <Settings className="w-4 h-4" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleDelete(deployment)}
+                        onClick={() => handleDelete(deployment.id, deployment.service_name)}
                         className="text-destructive hover:text-destructive"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -263,12 +247,12 @@ const Dashboard = () => {
                       <p className="text-xs text-muted-foreground mb-1">Deployed</p>
                       <p className="text-sm font-medium flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {deployment.deployedAt}
+                        {formatDate(deployment.created_at)}
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground mb-1">Requests Today</p>
-                      <p className="text-sm font-medium">{deployment.requestsToday}</p>
+                      <p className="text-xs text-muted-foreground mb-1">Requests</p>
+                      <p className="text-sm font-medium">{deployment.request_count}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground mb-1">Memory</p>
