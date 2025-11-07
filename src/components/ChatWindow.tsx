@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { X, Minus, Sparkles, Copy, Check, WifiOff, Loader2 } from "lucide-react";
+import { X, Minus, Sparkles, Copy, Check, WifiOff, Loader2, Maximize2 } from "lucide-react";
 import confetti from "canvas-confetti";
 import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
@@ -21,6 +21,7 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   } = useChat();
   
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -107,17 +108,28 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   return (
     <div
       className={`
-        fixed bottom-5 right-5 z-40
-        w-full max-w-[400px] 
-        ${isMinimized ? 'h-[60px]' : 'h-[600px] min-h-[400px]'}
+        fixed z-40
         bg-background/95 backdrop-blur-xl
         border border-[rgba(139,92,246,0.3)]
-        rounded-2xl shadow-2xl
+        shadow-2xl
         flex flex-col
+        transition-all duration-300 ease-in-out
+        ${isMaximized 
+          ? 'inset-4 rounded-2xl' 
+          : isMinimized 
+            ? 'bottom-5 right-5 w-[400px] h-[60px] rounded-2xl' 
+            : 'bottom-5 right-5 w-[400px] h-[600px] rounded-2xl resize overflow-hidden'
+        }
         animate-in slide-in-from-bottom-4 fade-in duration-300
-        md:w-[400px]
         max-md:inset-5 max-md:max-w-none max-md:h-[calc(100vh-40px)]
       `}
+      style={!isMaximized && !isMinimized ? { 
+        resize: 'both',
+        minWidth: '350px',
+        minHeight: '400px',
+        maxWidth: '90vw',
+        maxHeight: '90vh'
+      } : {}}
     >
       {/* Header */}
       <div className="relative border-b border-[rgba(139,92,246,0.3)] bg-gradient-to-r from-[#8b5cf6]/10 to-[#06b6d4]/10">
@@ -139,9 +151,24 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsMinimized(!isMinimized)}
+              onClick={() => {
+                setIsMaximized(!isMaximized);
+                setIsMinimized(false);
+              }}
+              className="p-2 hover:bg-accent rounded-lg transition-colors"
+              aria-label={isMaximized ? "Restore" : "Fullscreen"}
+              title={isMaximized ? "Restore size" : "Maximize to fullscreen"}
+            >
+              <Maximize2 size={18} />
+            </button>
+            <button
+              onClick={() => {
+                setIsMinimized(!isMinimized);
+                setIsMaximized(false);
+              }}
               className="p-2 hover:bg-accent rounded-lg transition-colors"
               aria-label="Minimize"
+              title="Minimize chat"
             >
               <Minus size={18} />
             </button>
@@ -149,6 +176,7 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
               onClick={onClose}
               className="p-2 hover:bg-accent rounded-lg transition-colors"
               aria-label="Close"
+              title="Close chat"
             >
               <X size={18} />
             </button>

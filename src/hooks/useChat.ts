@@ -189,22 +189,35 @@ export const useChat = (): UseChatReturn => {
   // Public Methods
   // ========================================================================
   
-  const sendMessage = useCallback((content: string, context?: Record<string, any>) => {
+  const sendMessage = useCallback((content: string, files?: File[] | Record<string, any>) => {
+    // Determine if files is actually files or context
+    const isFileArray = Array.isArray(files) && files.length > 0 && files[0] instanceof File;
+    const contextData = isFileArray ? undefined : files as Record<string, any> | undefined;
+    const uploadedFiles = isFileArray ? files as File[] : undefined;
+
     // Add user message to UI
     const userMessage: ChatMessage = {
       id: `msg_${Date.now()}`,
       role: 'user',
-      content,
+      content: uploadedFiles && uploadedFiles.length > 0 
+        ? `${content}\n\n📎 Attached: ${uploadedFiles.map(f => f.name).join(', ')}`
+        : content,
       timestamp: new Date(),
     };
     
     setMessages(prev => [...prev, userMessage]);
+
+    // TODO: Handle file upload to backend
+    if (uploadedFiles && uploadedFiles.length > 0) {
+      console.log('[useChat] Files to upload:', uploadedFiles.map(f => f.name));
+      // Future: Upload files to backend and get URLs
+    }
     
     // Send to backend
     const success = wsSendMessage({
       type: 'message',
       message: content,
-      context,
+      context: contextData,
     });
     
     if (!success) {
