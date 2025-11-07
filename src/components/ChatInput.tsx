@@ -10,6 +10,11 @@ const ChatInput = ({ onSendMessage, disabled = false }: ChatInputProps) => {
   const [message, setMessage] = useState("");
   const [charCount, setCharCount] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Debug: Log ChatInput props and state
+  useEffect(() => {
+    console.log('[ChatInput] disabled prop:', disabled, 'message:', message, 'button will be disabled:', !message.trim() || disabled);
+  }, [disabled, message]);
 
   useEffect(() => {
     if (textareaRef.current) {

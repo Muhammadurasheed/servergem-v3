@@ -26,6 +26,15 @@ export const useChat = (): UseChatReturn => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   
+  // Debug: Log state changes
+  useEffect(() => {
+    console.log('[useChat] isTyping state changed to:', isTyping);
+  }, [isTyping]);
+  
+  useEffect(() => {
+    console.log('[useChat] isConnected state changed to:', isConnected);
+  }, [isConnected]);
+  
   // ========================================================================
   // Message Creators (defined first to avoid circular dependencies)
   // ========================================================================

@@ -23,6 +23,11 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Debug: Log ChatWindow state
+  useEffect(() => {
+    console.log('[ChatWindow] isConnected:', isConnected, 'isTyping:', isTyping, 'disabled will be:', !isConnected || isTyping);
+  }, [isConnected, isTyping]);
 
   // Handle initial message from CTA buttons
   useEffect(() => {
