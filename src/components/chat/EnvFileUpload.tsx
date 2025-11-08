@@ -20,34 +20,59 @@ export function EnvFileUpload({ onEnvParsed }: EnvFileUploadProps) {
 
   // Parse .env file content
   const parseEnvFile = (content: string): EnvVariable[] => {
-    const lines = content.split('\n');
+    console.log('[EnvFileUpload] Parsing file content:', content.substring(0, 200));
+    
+    // Normalize line endings (handle \r\n, \n, \r)
+    const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalizedContent.split('\n');
     const envVars: EnvVariable[] = [];
     
-    for (const line of lines) {
+    console.log('[EnvFileUpload] Total lines:', lines.length);
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+      
       // Skip comments and empty lines
-      if (line.trim().startsWith('#') || line.trim() === '') {
+      if (trimmedLine.startsWith('#') || trimmedLine === '') {
         continue;
       }
       
-      // Parse KEY=VALUE format
-      const match = line.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i);
+      // Remove 'export ' prefix if present
+      const cleanLine = trimmedLine.replace(/^export\s+/, '');
+      
+      // More lenient regex: allows keys starting with letters or underscore
+      // and containing letters, numbers, or underscores
+      const match = cleanLine.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.*)$/);
+      
       if (match) {
         const key = match[1].trim();
         let value = match[2].trim();
         
-        // Remove quotes if present
+        console.log(`[EnvFileUpload] Found var at line ${i + 1}: ${key}=${value.substring(0, 20)}...`);
+        
+        // Remove quotes if present (single or double)
         if ((value.startsWith('"') && value.endsWith('"')) ||
             (value.startsWith("'") && value.endsWith("'"))) {
           value = value.slice(1, -1);
+        }
+        
+        // Remove trailing comments
+        if (value.includes('#')) {
+          const commentIndex = value.indexOf('#');
+          value = value.substring(0, commentIndex).trim();
         }
         
         // Detect if it's likely a secret
         const isSecret = detectSecret(key, value);
         
         envVars.push({ key, value, isSecret });
+      } else if (cleanLine.length > 0) {
+        console.warn(`[EnvFileUpload] Could not parse line ${i + 1}:`, cleanLine);
       }
     }
     
+    console.log('[EnvFileUpload] Parsed env vars:', envVars.length);
     return envVars;
   };
 
@@ -72,24 +97,32 @@ export function EnvFileUpload({ onEnvParsed }: EnvFileUploadProps) {
 
   // Handle file upload
   const handleFileUpload = async (file: File) => {
+    console.log('[EnvFileUpload] Starting file upload:', file.name, file.size, 'bytes');
     setIsProcessing(true);
     setUploadedFile(file);
     
     try {
       const content = await file.text();
+      console.log('[EnvFileUpload] File read successfully, length:', content.length);
+      
       const envVars = parseEnvFile(content);
       
       if (envVars.length === 0) {
-        toast.error('No environment variables found in file');
+        console.error('[EnvFileUpload] No environment variables found');
+        toast.error(
+          'No environment variables found in file. Please check the format: KEY=VALUE',
+          { duration: 5000 }
+        );
         setUploadedFile(null);
         return;
       }
       
+      console.log('[EnvFileUpload] Successfully parsed variables:', envVars);
       setParsedEnvs(envVars);
       onEnvParsed(envVars);
-      toast.success(`Successfully parsed ${envVars.length} environment variables`);
+      toast.success(`Successfully parsed ${envVars.length} environment variable${envVars.length > 1 ? 's' : ''}`);
     } catch (error) {
-      console.error('Error parsing .env file:', error);
+      console.error('[EnvFileUpload] Error parsing .env file:', error);
       toast.error('Failed to parse .env file. Please check the format.');
       setUploadedFile(null);
     } finally {
