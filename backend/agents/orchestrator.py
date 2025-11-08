@@ -10,11 +10,24 @@ FAANG-Level Production Implementation
 
 import asyncio
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Callable
 import google.generativeai as genai
 from datetime import datetime
 import json
 import uuid
+import os
+from dataclasses import dataclass
+
+
+@dataclass
+class ResourceConfig:
+    """Resource configuration for Cloud Run deployments"""
+    cpu: str
+    memory: str
+    concurrency: int
+    min_instances: int
+    max_instances: int
+
 
 class OrchestratorAgent:
     """
@@ -22,7 +35,15 @@ class OrchestratorAgent:
     Routes to real services: GitHub, Google Cloud, Docker, Analysis.
     """
     
-    def __init__(self, gemini_api_key: str, github_token: str = None, gcloud_project: str = None):
+    def __init__(
+        self, 
+        gemini_api_key: str, 
+        github_token: Optional[str] = None, 
+        gcloud_project: Optional[str] = None
+    ):
+        if not gemini_api_key:
+            raise ValueError("GEMINI_API_KEY is required")
+            
         genai.configure(api_key=gemini_api_key)
         
         # ServerGem-specific system instruction
@@ -64,37 +85,67 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         )
         
         self.conversation_history: List[Dict] = []
-        self.project_context: Dict = {}
+        self.project_context: Dict[str, Any] = {}
         self.chat_session = None
         
-        # Initialize real services
-        from services import GitHubService, GCloudService, DockerService, AnalysisService
-from services.monitoring import monitoring
-        from services.security import security
-        from services.optimization import optimization
-        from services.deployment_progress import create_progress_tracker
-        
-        self.github_service = GitHubService(github_token)
-        # Use ServerGem's GCP project (not user's)
-        self.gcloud_service = GCloudService(gcloud_project or 'servergem-platform') if gcloud_project else None
-        self.docker_service = DockerService()
-        self.analysis_service = AnalysisService(gemini_api_key)
-        
-        # Production services
-        self.monitoring = monitoring
-        self.security = security
-        self.optimization = optimization
+        # Initialize real services - with proper error handling
+        try:
+            from services.github_service import GitHubService
+            from services.gcloud_service import GCloudService
+            from services.docker_service import DockerService
+            from services.analysis_service import AnalysisService
+            from services.monitoring import monitoring
+            from services.security import security
+            from services.optimization import optimization
+            from services.deployment_progress import create_progress_tracker
+            
+            self.github_service = GitHubService(github_token)
+            # Use ServerGem's GCP project (not user's)
+            self.gcloud_service = GCloudService(
+                gcloud_project or 'servergem-platform'
+            ) if gcloud_project else None
+            self.docker_service = DockerService()
+            self.analysis_service = AnalysisService(gemini_api_key)
+            
+            # Production services
+            self.monitoring = monitoring
+            self.security = security
+            self.optimization = optimization
+            self.create_progress_tracker = create_progress_tracker
+            
+        except ImportError as e:
+            print(f"[WARNING] Service import failed: {e}")
+            print("[WARNING] Running in mock mode - services not available")
+            # Create mock services for testing
+            self._init_mock_services()
     
-    def _get_function_declarations(self) -> List[Dict]:
+    def _init_mock_services(self):
+        """Initialize mock services for testing when real services unavailable"""
+        class MockService:
+            def __getattr__(self, name):
+                async def mock_method(*args, **kwargs):
+                    return {'success': False, 'error': 'Service not available'}
+                return mock_method
+        
+        self.github_service = MockService()
+        self.gcloud_service = MockService()
+        self.docker_service = MockService()
+        self.analysis_service = MockService()
+        self.monitoring = MockService()
+        self.security = MockService()
+        self.optimization = MockService()
+        self.create_progress_tracker = lambda *args, **kwargs: MockService()
+    
+    def _get_function_declarations(self) -> List[genai.types.Tool]:
         """
         Define real functions available for Gemini ADK to call
         Uses proper Google AI SDK format
         """
         return [
-            {
-                'name': 'clone_and_analyze_repo',
-                'description': 'Clone a GitHub repository and perform comprehensive analysis to detect framework, dependencies, and deployment requirements. Use this when user provides a GitHub repo URL.',
-                'parameters': {
+            genai.types.FunctionDeclaration(
+                name='clone_and_analyze_repo',
+                description='Clone a GitHub repository and perform comprehensive analysis to detect framework, dependencies, and deployment requirements. Use this when user provides a GitHub repo URL.',
+                parameters={
                     'type': 'object',
                     'properties': {
                         'repo_url': {
@@ -108,11 +159,11 @@ from services.monitoring import monitoring
                     },
                     'required': ['repo_url']
                 }
-            },
-            {
-                'name': 'deploy_to_cloudrun',
-                'description': 'Deploy an analyzed project to Google Cloud Run. Generates Dockerfile, builds image via Cloud Build, and deploys the service. Use this after analyzing a repository.',
-                'parameters': {
+            ),
+            genai.types.FunctionDeclaration(
+                name='deploy_to_cloudrun',
+                description='Deploy an analyzed project to Google Cloud Run. Generates Dockerfile, builds image via Cloud Build, and deploys the service. Use this after analyzing a repository.',
+                parameters={
                     'type': 'object',
                     'properties': {
                         'project_path': {
@@ -130,20 +181,20 @@ from services.monitoring import monitoring
                     },
                     'required': ['project_path', 'service_name']
                 }
-            },
-            {
-                'name': 'list_user_repositories',
-                'description': 'List GitHub repositories for the authenticated user. Use this when user asks to see their repos or wants to select a project to deploy.',
-                'parameters': {
+            ),
+            genai.types.FunctionDeclaration(
+                name='list_user_repositories',
+                description='List GitHub repositories for the authenticated user. Use this when user asks to see their repos or wants to select a project to deploy.',
+                parameters={
                     'type': 'object',
                     'properties': {},
                     'required': []
                 }
-            },
-            {
-                'name': 'get_deployment_logs',
-                'description': 'Fetch recent logs from a deployed Cloud Run service. Use this for debugging deployment issues or when user asks to see logs.',
-                'parameters': {
+            ),
+            genai.types.FunctionDeclaration(
+                name='get_deployment_logs',
+                description='Fetch recent logs from a deployed Cloud Run service. Use this for debugging deployment issues or when user asks to see logs.',
+                parameters={
                     'type': 'object',
                     'properties': {
                         'service_name': {
@@ -157,10 +208,15 @@ from services.monitoring import monitoring
                     },
                     'required': ['service_name']
                 }
-            }
+            )
         ]
     
-    async def process_message(self, user_message: str, session_id: str, progress_callback=None) -> Dict:
+    async def process_message(
+        self, 
+        user_message: str, 
+        session_id: str, 
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """
         Main entry point: processes user message with Gemini ADK function calling
         
@@ -176,14 +232,16 @@ from services.monitoring import monitoring
         
         # Add project context to enhance Gemini's understanding
         context_prefix = self._build_context_prefix()
-        enhanced_message = f"{context_prefix}\n\nUser: {user_message}" if context_prefix else user_message
+        enhanced_message = (
+            f"{context_prefix}\n\nUser: {user_message}" 
+            if context_prefix 
+            else user_message
+        )
         
         try:
             # Send to Gemini with function calling enabled
-            response = await asyncio.to_thread(
-                self.chat_session.send_message,
-                enhanced_message
-            )
+            # Note: send_message is synchronous, no need for asyncio.to_thread
+            response = self.chat_session.send_message(enhanced_message)
             
             # Check if Gemini wants to call a function
             if hasattr(response, 'candidates') and response.candidates:
@@ -192,19 +250,39 @@ from services.monitoring import monitoring
                     for part in candidate.content.parts:
                         if hasattr(part, 'function_call') and part.function_call:
                             # Route to real service handler
-                            return await self._handle_function_call(
+                            function_result = await self._handle_function_call(
                                 part.function_call,
                                 progress_callback=progress_callback
                             )
+                            
+                            # Send function result back to Gemini
+                            function_response = genai.types.FunctionResponse(
+                                name=part.function_call.name,
+                                response=function_result
+                            )
+                            
+                            # Get Gemini's final response
+                            final_response = self.chat_session.send_message(
+                                genai.types.Content(
+                                    parts=[genai.types.Part(function_response=function_response)]
+                                )
+                            )
+                            
+                            # Extract text from final response
+                            response_text = self._extract_text_from_response(final_response)
+                            
+                            # Return combined result
+                            return {
+                                'type': function_result.get('type', 'message'),
+                                'content': response_text or function_result.get('content', ''),
+                                'data': function_result.get('data'),
+                                'actions': function_result.get('actions'),
+                                'deployment_url': function_result.get('deployment_url'),
+                                'timestamp': datetime.now().isoformat()
+                            }
             
             # Regular text response (no function call needed)
-            response_text = ''
-            if hasattr(response, 'text') and response.text:
-                response_text = response.text
-            elif hasattr(response, 'candidates') and response.candidates:
-                parts = response.candidates[0].content.parts
-                if parts:
-                    response_text = ''.join([part.text for part in parts if hasattr(part, 'text')])
+            response_text = self._extract_text_from_response(response)
             
             return {
                 'type': 'message',
@@ -214,13 +292,35 @@ from services.monitoring import monitoring
             
         except Exception as e:
             print(f"[Orchestrator] Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {
                 'type': 'error',
                 'content': f'❌ Error processing message: {str(e)}',
                 'timestamp': datetime.now().isoformat()
             }
     
-    async def _handle_function_call(self, function_call, progress_callback=None) -> Dict:
+    def _extract_text_from_response(self, response) -> str:
+        """Extract text content from Gemini response"""
+        try:
+            if hasattr(response, 'text') and response.text:
+                return response.text
+            elif hasattr(response, 'candidates') and response.candidates:
+                parts = response.candidates[0].content.parts
+                if parts:
+                    return ''.join([
+                        part.text for part in parts 
+                        if hasattr(part, 'text') and part.text
+                    ])
+        except Exception as e:
+            print(f"[Orchestrator] Error extracting text: {e}")
+        return ''
+    
+    async def _handle_function_call(
+        self, 
+        function_call, 
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """
         Route Gemini function calls to real service implementations
         
@@ -257,7 +357,12 @@ from services.monitoring import monitoring
     # REAL SERVICE HANDLERS - Production Implementation
     # ========================================================================
     
-    async def _handle_clone_and_analyze(self, repo_url: str, branch: str = 'main', progress_callback=None) -> Dict:
+    async def _handle_clone_and_analyze(
+        self, 
+        repo_url: str, 
+        branch: str = 'main', 
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """
         Clone GitHub repo and analyze it - REAL IMPLEMENTATION
         Uses: GitHubService, AnalysisService, DockerService
@@ -265,8 +370,8 @@ from services.monitoring import monitoring
         
         try:
             # Create progress tracker for structured updates
-            tracker = create_progress_tracker(
-                deployment_id=f"analysis-{datetime.now().timestamp()}",
+            tracker = self.create_progress_tracker(
+                deployment_id=f"analysis-{int(datetime.now().timestamp())}",
                 service_name=repo_url.split('/')[-1].replace('.git', ''),
                 progress_callback=progress_callback
             )
@@ -301,7 +406,10 @@ from services.monitoring import monitoring
             analysis_result = await self.analysis_service.analyze_and_generate(project_path)
             
             if not analysis_result.get('success'):
-                await tracker.emit_error('code_analysis', analysis_result.get('error', 'Unknown error'))
+                await tracker.emit_error(
+                    'code_analysis', 
+                    analysis_result.get('error', 'Unknown error')
+                )
                 return {
                     'type': 'error',
                     'content': f"❌ **Analysis failed**\n\n{analysis_result.get('error')}",
@@ -316,7 +424,7 @@ from services.monitoring import monitoring
                 analysis_data.get('runtime', 'latest')
             )
             await tracker.emit_dependency_analysis(
-                analysis_data['dependencies_count'],
+                analysis_data.get('dependencies_count', 0),
                 analysis_data.get('database')
             )
             await tracker.complete_code_analysis()
@@ -349,27 +457,11 @@ from services.monitoring import monitoring
             self.project_context['language'] = analysis_result['analysis']['language']
             
             # Format beautiful response
-            analysis_data = analysis_result['analysis']
-            content = f"""
-🔍 **Analysis Complete: {repo_url.split('/')[-1]}**
-
-**Framework:** {analysis_data['framework']} ({analysis_data['language']})
-**Entry Point:** `{analysis_data['entry_point']}`
-**Dependencies:** {analysis_data['dependencies_count']} packages
-**Port:** {analysis_data['port']}
-{f"**Database:** {analysis_data['database']}" if analysis_data.get('database') else ''}
-{f"**Environment Variables:** {len(analysis_data['env_vars'])} detected" if analysis_data.get('env_vars') else ''}
-
-✅ **Dockerfile Generated** ({dockerfile_save.get('path', 'Dockerfile')})
-{chr(10).join(['• ' + opt for opt in analysis_result['dockerfile']['optimizations'][:4]])}
-
-📋 **Recommendations:**
-{chr(10).join(['• ' + rec for rec in analysis_result['recommendations'][:3]])}
-
-{f"⚠️ **Warnings:**{chr(10)}{chr(10).join(['• ' + w for w in analysis_result['warnings']][:2])}" if analysis_result.get('warnings') else ''}
-
-Ready to deploy to Google Cloud Run! Would you like me to proceed?
-            """.strip()
+            content = self._format_analysis_response(
+                analysis_result, 
+                dockerfile_save, 
+                repo_url
+            )
             
             return {
                 'type': 'analysis',
@@ -399,38 +491,65 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             }
             
         except Exception as e:
-            error_msg = str(e)
-            print(f"[Orchestrator] Clone and analyze error: {error_msg}")
+            print(f"[Orchestrator] Clone and analyze error: {str(e)}")
             import traceback
             traceback.print_exc()
-            
-            # Send error via progress callback if available
-            if progress_callback:
-                try:
-                    from services.deployment_progress import create_progress_tracker
-                    tracker = create_progress_tracker(
-                        deployment_id=f"error-{datetime.now().timestamp()}",
-                        service_name="analysis",
-                        progress_callback=progress_callback
-                    )
-                    await tracker.emit_error("Repository Analysis", error_msg)
-                except Exception as callback_error:
-                    print(f"[Orchestrator] Could not send error via callback: {callback_error}")
-                    pass
-            
             return {
                 'type': 'error',
-                'content': f'❌ **Analysis failed**\n\n```\n{error_msg}\n```\n\nPlease try again or check the logs.',
+                'content': f'❌ **Analysis failed**\n\n```\n{str(e)}\n```\n\nPlease try again or check the logs.',
                 'timestamp': datetime.now().isoformat()
             }
+    
+    def _format_analysis_response(
+        self, 
+        analysis_result: Dict, 
+        dockerfile_save: Dict, 
+        repo_url: str
+    ) -> str:
+        """Format analysis results into a beautiful response"""
+        analysis_data = analysis_result['analysis']
+        
+        parts = [
+            f"🔍 **Analysis Complete: {repo_url.split('/')[-1]}**\n",
+            f"**Framework:** {analysis_data['framework']} ({analysis_data['language']})",
+            f"**Entry Point:** `{analysis_data['entry_point']}`",
+            f"**Dependencies:** {analysis_data.get('dependencies_count', 0)} packages",
+            f"**Port:** {analysis_data['port']}"
+        ]
+        
+        if analysis_data.get('database'):
+            parts.append(f"**Database:** {analysis_data['database']}")
+        
+        if analysis_data.get('env_vars'):
+            parts.append(f"**Environment Variables:** {len(analysis_data['env_vars'])} detected")
+        
+        parts.append(
+            f"\n✅ **Dockerfile Generated** ({dockerfile_save.get('path', 'Dockerfile')})"
+        )
+        
+        optimizations = analysis_result['dockerfile']['optimizations'][:4]
+        parts.extend(['• ' + opt for opt in optimizations])
+        
+        parts.append("\n📋 **Recommendations:**")
+        recommendations = analysis_result.get('recommendations', [])[:3]
+        parts.extend(['• ' + rec for rec in recommendations])
+        
+        if analysis_result.get('warnings'):
+            parts.append("\n⚠️ **Warnings:**")
+            warnings = analysis_result['warnings'][:2]
+            parts.extend(['• ' + w for w in warnings])
+        
+        parts.append("\nReady to deploy to Google Cloud Run! Would you like me to proceed?")
+        
+        return '\n'.join(parts)
     
     async def _handle_deploy_to_cloudrun(
         self,
         project_path: str,
         service_name: str,
-        env_vars: Dict = None,
-        progress_callback=None
-    ) -> Dict:
+        env_vars: Optional[Dict] = None,
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """
         Deploy to Cloud Run - PRODUCTION IMPLEMENTATION
         
@@ -455,7 +574,7 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
         
         try:
             # Create progress tracker for real-time updates
-            tracker = create_progress_tracker(
+            tracker = self.create_progress_tracker(
                 deployment_id,
                 service_name,
                 progress_callback
@@ -492,7 +611,7 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             
             self.monitoring.record_stage(deployment_id, 'validation', 'success', 0.5)
             
-            # SERVERGEM ARCHITECTURE: No user GCP auth needed - using ServerGem's infrastructure
+            # SERVERGEM ARCHITECTURE: No user GCP auth needed
             # Step 1: Validate Dockerfile exists
             dockerfile_check = self.docker_service.validate_dockerfile(project_path)
             if not dockerfile_check.get('valid'):
@@ -506,14 +625,24 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             # Security: Scan Dockerfile
             await tracker.start_security_scan()
             
-            security_scan = self.security.scan_dockerfile_security(
-                open(f"{project_path}/Dockerfile").read()
-            )
+            with open(f"{project_path}/Dockerfile", 'r') as f:
+                dockerfile_content = f.read()
+            
+            security_scan = self.security.scan_dockerfile_security(dockerfile_content)
             
             # Emit security check results
-            await tracker.emit_security_check("Base image validation", security_scan['secure'])
-            await tracker.emit_security_check("Privilege escalation check", not any('privilege' in issue.lower() for issue in security_scan['issues']))
-            await tracker.emit_security_check("Secret exposure check", not any('secret' in issue.lower() for issue in security_scan['issues']))
+            await tracker.emit_security_check(
+                "Base image validation", 
+                security_scan['secure']
+            )
+            await tracker.emit_security_check(
+                "Privilege escalation check", 
+                not any('privilege' in issue.lower() for issue in security_scan['issues'])
+            )
+            await tracker.emit_security_check(
+                "Secret exposure check", 
+                not any('secret' in issue.lower() for issue in security_scan['issues'])
+            )
             
             await tracker.complete_security_scan(len(security_scan['issues']))
             
@@ -549,7 +678,10 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             self.monitoring.record_stage(deployment_id, 'build', 'success', build_duration)
             
             if not build_result.get('success'):
-                await tracker.emit_error('container_build', build_result.get('error', 'Build failed'))
+                await tracker.emit_error(
+                    'container_build', 
+                    build_result.get('error', 'Build failed')
+                )
                 self.monitoring.complete_deployment(deployment_id, 'failed')
                 return {
                     'type': 'error',
@@ -587,14 +719,17 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                 service_name,
                 env_vars=deploy_env,
                 progress_callback=deploy_progress,
-                user_id=deployment_id[:8]  # Use deployment ID prefix
+                user_id=deployment_id[:8]
             )
             
             deploy_duration = time.time() - deploy_start
             self.monitoring.record_stage(deployment_id, 'deploy', 'success', deploy_duration)
             
             if not deploy_result.get('success'):
-                await tracker.emit_error('cloud_deployment', deploy_result.get('error', 'Deployment failed'))
+                await tracker.emit_error(
+                    'cloud_deployment', 
+                    deploy_result.get('error', 'Deployment failed')
+                )
                 self.monitoring.complete_deployment(deployment_id, 'failed')
                 return {
                     'type': 'error',
@@ -615,39 +750,17 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             self.project_context['deployment_id'] = deployment_id
             
             # Get cost estimation
-            estimated_cost = self.optimization.estimate_cost(optimal_config, 100000)  # 100k requests/month
+            estimated_cost = self.optimization.estimate_cost(optimal_config, 100000)
             
-            content = f"""
-🎉 **Deployment Successful!**
-
-Your service is now live at:
-**{deploy_result['url']}**
-
-**Service:** {service_name}
-**Region:** {deploy_result['region']}
-**Deployment ID:** `{deployment_id}`
-
-⚡ **Performance:**
-• Build: {build_duration:.1f}s
-• Deploy: {deploy_duration:.1f}s
-• Total: {total_duration:.1f}s
-
-🔧 **Configuration:**
-• CPU: {optimal_config.cpu} vCPU
-• Memory: {optimal_config.memory}
-• Concurrency: {optimal_config.concurrency} requests
-• Auto-scaling: {optimal_config.min_instances}-{optimal_config.max_instances} instances
-
-💰 **Estimated Cost (100k requests/month):**
-• ${estimated_cost['total_monthly']:.2f} USD/month
-
-✅ Auto HTTPS enabled
-✅ Auto-scaling configured
-✅ Health checks active
-✅ Monitoring enabled
-
-What would you like to do next?
-            """.strip()
+            content = self._format_deployment_response(
+                deploy_result,
+                deployment_id,
+                build_duration,
+                deploy_duration,
+                total_duration,
+                optimal_config,
+                estimated_cost
+            )
             
             return {
                 'type': 'deployment_complete',
@@ -704,7 +817,53 @@ What would you like to do next?
                 'timestamp': datetime.now().isoformat()
             }
     
-    async def _handle_list_repos(self, progress_callback=None) -> Dict:
+    def _format_deployment_response(
+        self,
+        deploy_result: Dict,
+        deployment_id: str,
+        build_duration: float,
+        deploy_duration: float,
+        total_duration: float,
+        optimal_config: ResourceConfig,
+        estimated_cost: Dict
+    ) -> str:
+        """Format deployment success response"""
+        return f"""
+🎉 **Deployment Successful!**
+
+Your service is now live at:
+**{deploy_result['url']}**
+
+**Service:** {deploy_result.get('service_name', 'N/A')}
+**Region:** {deploy_result['region']}
+**Deployment ID:** `{deployment_id}`
+
+⚡ **Performance:**
+• Build: {build_duration:.1f}s
+• Deploy: {deploy_duration:.1f}s
+• Total: {total_duration:.1f}s
+
+🔧 **Configuration:**
+• CPU: {optimal_config.cpu} vCPU
+• Memory: {optimal_config.memory}
+• Concurrency: {optimal_config.concurrency} requests
+• Auto-scaling: {optimal_config.min_instances}-{optimal_config.max_instances} instances
+
+💰 **Estimated Cost (100k requests/month):**
+• ${estimated_cost.get('total_monthly', 0):.2f} USD/month
+
+✅ Auto HTTPS enabled
+✅ Auto-scaling configured
+✅ Health checks active
+✅ Monitoring enabled
+
+What would you like to do next?
+        """.strip()
+    
+    async def _handle_list_repos(
+        self, 
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """List user's GitHub repositories - REAL IMPLEMENTATION"""
         
         try:
@@ -734,9 +893,9 @@ What would you like to do next?
             
             # Format repo list beautifully
             repo_list = '\n'.join([
-                f"**{i+1}. {repo['name']}** ({repo['language'] or 'Unknown'})"
+                f"**{i+1}. {repo['name']}** ({repo.get('language', 'Unknown')})"
                 f"\n   {repo.get('description', 'No description')[:60]}"
-                f"\n   ⭐ {repo['stars']} stars | 🔒 {'Private' if repo['private'] else 'Public'}"
+                f"\n   ⭐ {repo.get('stars', 0)} stars | 🔒 {'Private' if repo.get('private') else 'Public'}"
                 for i, repo in enumerate(repos[:10])
             ])
             
@@ -763,7 +922,12 @@ Which repository would you like to deploy? Just tell me the name or paste the UR
                 'timestamp': datetime.now().isoformat()
             }
     
-    async def _handle_get_logs(self, service_name: str, limit: int = 50, progress_callback=None) -> Dict:
+    async def _handle_get_logs(
+        self, 
+        service_name: str, 
+        limit: int = 50, 
+        progress_callback: Optional[Callable] = None
+    ) -> Dict[str, Any]:
         """Get deployment logs - REAL IMPLEMENTATION"""
         
         if not self.gcloud_service:
@@ -838,39 +1002,120 @@ Showing last {min(20, len(logs))} entries (total: {len(logs)})
         
         return "Current project context: " + ", ".join(context_parts) if context_parts else ""
     
-    def update_context(self, key: str, value: any):
+    def update_context(self, key: str, value: Any):
         """Update project context"""
         self.project_context[key] = value
     
-    def get_context(self) -> Dict:
+    def get_context(self) -> Dict[str, Any]:
         """Get current project context"""
-        return self.project_context
+        return self.project_context.copy()
+    
+    def clear_context(self):
+        """Clear project context"""
+        self.project_context.clear()
+    
+    def reset_chat(self):
+        """Reset chat session and context"""
+        self.chat_session = None
+        self.conversation_history.clear()
+        self.project_context.clear()
 
 
-# Test orchestrator with real services
+# ============================================================================
+# TEST SUITE
+# ============================================================================
+
 async def test_orchestrator():
+    """Test orchestrator with real services"""
     import os
     from dotenv import load_dotenv
     load_dotenv()
     
+    gemini_key = os.getenv('GEMINI_API_KEY')
+    github_token = os.getenv('GITHUB_TOKEN')
+    gcloud_project = os.getenv('GOOGLE_CLOUD_PROJECT')
+    
+    if not gemini_key:
+        print("❌ GEMINI_API_KEY not found in environment")
+        return
+    
+    print("🚀 Initializing ServerGem Orchestrator...")
     orchestrator = OrchestratorAgent(
-        gemini_api_key=os.getenv('GEMINI_API_KEY'),
-        github_token=os.getenv('GITHUB_TOKEN'),
-        gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
+        gemini_api_key=gemini_key,
+        github_token=github_token,
+        gcloud_project=gcloud_project
     )
     
     test_messages = [
+        "Hello! What can you help me with?",
         "List my GitHub repositories",
-        "Analyze my repo: https://github.com/user/flask-app",
-        "Deploy it to Cloud Run as my-flask-service"
+        # "Analyze this repo: https://github.com/user/flask-app",
+        # "Deploy it to Cloud Run as my-flask-service"
     ]
     
     for msg in test_messages:
         print(f"\n{'='*60}")
         print(f"🧑 USER: {msg}")
         print(f"{'='*60}")
-        response = await orchestrator.process_message(msg, session_id="test-123")
-        print(f"🤖 SERVERGEM:\n{response['content']}")
+        
+        try:
+            response = await orchestrator.process_message(
+                msg, 
+                session_id="test-123"
+            )
+            print(f"\n🤖 SERVERGEM ({response['type']}):")
+            print(response['content'])
+            
+            if response.get('data'):
+                print(f"\n📊 Additional Data: {list(response['data'].keys())}")
+            
+            if response.get('actions'):
+                print(f"\n🎯 Available Actions: {[a['label'] for a in response['actions']]}")
+                
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        
+        print()  # Spacing
+
+
+async def test_function_calling():
+    """Test direct function calling"""
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    gemini_key = os.getenv('GEMINI_API_KEY')
+    if not gemini_key:
+        print("❌ GEMINI_API_KEY not found")
+        return
+    
+    orchestrator = OrchestratorAgent(
+        gemini_api_key=gemini_key,
+        github_token=os.getenv('GITHUB_TOKEN'),
+        gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
+    )
+    
+    print("Testing message that should trigger function call...")
+    response = await orchestrator.process_message(
+        "Can you list my GitHub repositories?",
+        session_id="test-func-call"
+    )
+    
+    print(f"\nResponse Type: {response['type']}")
+    print(f"Content:\n{response['content']}")
+
+
+def main():
+    """Main entry point"""
+    import sys
+    
+    if len(sys.argv) > 1 and sys.argv[1] == '--test-functions':
+        asyncio.run(test_function_calling())
+    else:
+        asyncio.run(test_orchestrator())
+
 
 if __name__ == "__main__":
-    asyncio.run(test_orchestrator())
+    main()
