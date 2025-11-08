@@ -69,9 +69,10 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         
         # Initialize real services
         from services import GitHubService, GCloudService, DockerService, AnalysisService
-        from services.monitoring import monitoring
+from services.monitoring import monitoring
         from services.security import security
         from services.optimization import optimization
+        from services.deployment_progress import create_progress_tracker
         
         self.github_service = GitHubService(github_token)
         # Use ServerGem's GCP project (not user's)
@@ -263,13 +264,16 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         """
         
         try:
-            if progress_callback:
-                await progress_callback({
-                    'type': 'typing',
-                    'message': f'Cloning repository {repo_url}...'
-                })
+            # Create progress tracker for structured updates
+            tracker = create_progress_tracker(
+                deployment_id=f"analysis-{datetime.now().timestamp()}",
+                service_name=repo_url.split('/')[-1].replace('.git', ''),
+                progress_callback=progress_callback
+            )
             
             # Step 1: Clone repository using GitHubService
+            await tracker.start_repo_clone(repo_url)
+            
             clone_result = self.github_service.clone_repository(repo_url, branch)
             
             if not clone_result.get('success'):
@@ -284,26 +288,53 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
             self.project_context['repo_url'] = repo_url
             self.project_context['branch'] = branch
             
-            if progress_callback:
-                await progress_callback({
-                    'type': 'typing',
-                    'message': f'Analyzing codebase ({clone_result["files_count"]} files)...'
-                })
+            # Emit clone completion with details
+            await tracker.complete_repo_clone(
+                project_path,
+                clone_result.get('files_count', 0),
+                clone_result.get('size_mb', 0.0)
+            )
             
             # Step 2: Analyze project using AnalysisService
+            await tracker.start_code_analysis(project_path)
+            
             analysis_result = await self.analysis_service.analyze_and_generate(project_path)
             
             if not analysis_result.get('success'):
+                await tracker.emit_error('code_analysis', analysis_result.get('error', 'Unknown error'))
                 return {
                     'type': 'error',
                     'content': f"❌ **Analysis failed**\n\n{analysis_result.get('error')}",
                     'timestamp': datetime.now().isoformat()
                 }
             
-            # Step 3: Save Dockerfile using DockerService
+            # Emit framework and dependency detection
+            analysis_data = analysis_result['analysis']
+            await tracker.emit_framework_detection(
+                analysis_data['framework'],
+                analysis_data['language'],
+                analysis_data.get('runtime', 'latest')
+            )
+            await tracker.emit_dependency_analysis(
+                analysis_data['dependencies_count'],
+                analysis_data.get('database')
+            )
+            await tracker.complete_code_analysis()
+            
+            # Step 3: Generate and save Dockerfile
+            await tracker.start_dockerfile_generation(analysis_data['framework'])
+            
+            await tracker.emit_dockerfile_optimization(
+                analysis_result['dockerfile']['optimizations']
+            )
+            
             dockerfile_save = self.docker_service.save_dockerfile(
                 analysis_result['dockerfile']['content'],
                 project_path
+            )
+            
+            await tracker.complete_dockerfile_generation(
+                dockerfile_save.get('path', f'{project_path}/Dockerfile')
             )
             
             # Step 4: Create .dockerignore
@@ -407,6 +438,13 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
         start_time = time.time()
         
         try:
+            # Create progress tracker for real-time updates
+            tracker = create_progress_tracker(
+                deployment_id,
+                service_name,
+                progress_callback
+            )
+            
             # Start monitoring
             metrics = self.monitoring.start_deployment(deployment_id, service_name)
             
@@ -450,31 +488,40 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                 }
             
             # Security: Scan Dockerfile
+            await tracker.start_security_scan()
+            
             security_scan = self.security.scan_dockerfile_security(
                 open(f"{project_path}/Dockerfile").read()
             )
+            
+            # Emit security check results
+            await tracker.emit_security_check("Base image validation", security_scan['secure'])
+            await tracker.emit_security_check("Privilege escalation check", not any('privilege' in issue.lower() for issue in security_scan['issues']))
+            await tracker.emit_security_check("Secret exposure check", not any('secret' in issue.lower() for issue in security_scan['issues']))
+            
+            await tracker.complete_security_scan(len(security_scan['issues']))
+            
             if not security_scan['secure']:
-                for issue in security_scan['issues'][:3]:  # Show top 3 issues
+                for issue in security_scan['issues'][:3]:
                     self.monitoring.record_error(deployment_id, f"Security: {issue}")
+                    await tracker.emit_warning(f"Security issue: {issue}")
             
             # Step 3: Build Docker image with Cloud Build
-            if progress_callback:
-                await progress_callback({
-                    'type': 'deployment_update',
-                    'data': {
-                        'stage': 'build',
-                        'progress': 10,
-                        'message': 'Submitting build to Cloud Build...',
-                        'logs': ['🔨 Starting optimized build...']
-                    }
-                })
+            image_tag = f"gcr.io/servergem-platform/{service_name}:latest"
+            await tracker.start_container_build(image_tag)
             
             build_start = time.time()
             
             async def build_progress(data):
-                if progress_callback:
-                    await progress_callback({'type': 'deployment_update', 'data': data})
-            
+                """Forward build progress to tracker"""
+                if data.get('step'):
+                    await tracker.emit_build_step(
+                        data['step'],
+                        data.get('total_steps', 10),
+                        data.get('description', 'Building...')
+                    )
+                elif data.get('progress'):
+                    await tracker.emit_build_progress(data['progress'])
             
             build_result = await self.gcloud_service.build_image(
                 project_path,
@@ -486,6 +533,7 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
             self.monitoring.record_stage(deployment_id, 'build', 'success', build_duration)
             
             if not build_result.get('success'):
+                await tracker.emit_error('container_build', build_result.get('error', 'Build failed'))
                 self.monitoring.complete_deployment(deployment_id, 'failed')
                 return {
                     'type': 'error',
@@ -493,27 +541,27 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                     'timestamp': datetime.now().isoformat()
                 }
             
+            # Emit build completion
+            await tracker.complete_container_build(
+                build_result.get('image_digest', 'sha256:' + deployment_id[:20])
+            )
+            
             # Step 4: Deploy to Cloud Run with optimal configuration
-            if progress_callback:
-                await progress_callback({
-                    'type': 'deployment_update',
-                    'data': {
-                        'stage': 'deploy',
-                        'progress': 60,
-                        'message': f'Deploying to Cloud Run ({optimal_config.cpu} CPU, {optimal_config.memory} RAM)...',
-                        'logs': [
-                            f'⚙️ Optimized config: {optimal_config.cpu} CPU, {optimal_config.memory} RAM',
-                            f'🔄 Auto-scaling: {optimal_config.min_instances}-{optimal_config.max_instances} instances',
-                            f'⚡ Concurrency: {optimal_config.concurrency} requests'
-                        ]
-                    }
-                })
+            region = build_result.get('region', 'us-central1')
+            await tracker.start_cloud_deployment(service_name, region)
+            
+            await tracker.emit_deployment_config(
+                optimal_config.cpu,
+                optimal_config.memory,
+                optimal_config.concurrency
+            )
             
             deploy_start = time.time()
             
             async def deploy_progress(data):
-                if progress_callback:
-                    await progress_callback({'type': 'deployment_update', 'data': data})
+                """Forward deployment progress to tracker"""
+                if data.get('status'):
+                    await tracker.emit_deployment_status(data['status'])
             
             # Add resource configuration to deployment
             deploy_env = env_vars or {}
@@ -523,13 +571,14 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                 service_name,
                 env_vars=deploy_env,
                 progress_callback=deploy_progress,
-                user_id=session_id[:8] if session_id else 'default'  # Use session ID as user identifier
+                user_id=deployment_id[:8]  # Use deployment ID prefix
             )
             
             deploy_duration = time.time() - deploy_start
             self.monitoring.record_stage(deployment_id, 'deploy', 'success', deploy_duration)
             
             if not deploy_result.get('success'):
+                await tracker.emit_error('cloud_deployment', deploy_result.get('error', 'Deployment failed'))
                 self.monitoring.complete_deployment(deployment_id, 'failed')
                 return {
                     'type': 'error',
@@ -537,7 +586,10 @@ Ready to deploy to Google Cloud Run! Would you like me to proceed?
                     'timestamp': datetime.now().isoformat()
                 }
             
-            # Success! Calculate metrics and complete
+            # Success! Complete deployment
+            await tracker.complete_cloud_deployment(deploy_result['url'])
+            
+            # Calculate metrics and complete monitoring
             total_duration = time.time() - start_time
             self.monitoring.complete_deployment(deployment_id, 'success')
             
