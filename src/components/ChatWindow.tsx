@@ -6,7 +6,6 @@ import ChatInput from "./ChatInput";
 import { useChat } from "@/hooks/useChat";
 import type { MessageAction } from "@/types/websocket";
 import { DeploymentProgressPanel } from "./deployment/DeploymentProgressPanel";
-import { MinimizedDeploymentIndicator } from "./deployment/MinimizedDeploymentIndicator";
 import { AnimatePresence } from "framer-motion";
 
 interface ChatWindowProps {
@@ -30,7 +29,6 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   const [isMaximized, setIsMaximized] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [showDeploymentPanel, setShowDeploymentPanel] = useState(true);
-  const [deploymentMinimized, setDeploymentMinimized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Debug: Log ChatWindow state
@@ -83,14 +81,6 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   const handleCloseDeployment = () => {
     setShowDeploymentPanel(false);
     setDeploymentProgress(null);
-  };
-
-  const handleMinimizeDeployment = () => {
-    setDeploymentMinimized(true);
-  };
-
-  const handleExpandDeployment = () => {
-    setDeploymentMinimized(false);
   };
 
   // Get connection status display
@@ -327,23 +317,12 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
         <div className="resize-handle-indicator" />
       )}
       
-      {/* Deployment Progress Panel */}
+      {/* Deployment Progress Panel - Manages its own minimize state */}
       <AnimatePresence>
-        {deploymentProgress && showDeploymentPanel && !deploymentMinimized && (
+        {deploymentProgress && showDeploymentPanel && (
           <DeploymentProgressPanel
             progress={deploymentProgress}
             onClose={handleCloseDeployment}
-            onMinimize={handleMinimizeDeployment}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Minimized Deployment Indicator */}
-      <AnimatePresence>
-        {deploymentProgress && deploymentMinimized && deploymentProgress.status === 'deploying' && (
-          <MinimizedDeploymentIndicator
-            progress={deploymentProgress}
-            onExpand={handleExpandDeployment}
           />
         )}
       </AnimatePresence>
