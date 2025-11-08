@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import { DeploymentProgress } from '@/types/deployment';
 import { Loader2, X, Move } from 'lucide-react';
 import Draggable from 'react-draggable';
@@ -32,18 +31,15 @@ export function MinimizedDeploymentIndicator({
   return (
     <Draggable
       handle=".drag-handle"
-      defaultPosition={{ x: window.innerWidth - 380, y: window.innerHeight - 250 }}
+      defaultPosition={{ x: 20, y: -200 }}
       onStart={() => setIsDragging(true)}
       onStop={() => {
         setTimeout(() => setIsDragging(false), 100);
       }}
     >
-      <motion.div
-        className="absolute z-[60]"
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        transition={{ duration: 0.3, ease: 'easeOut' }}
+      <div
+        className="fixed bottom-0 right-0 z-[60]"
+        style={{ cursor: isDragging ? 'grabbing' : 'default' }}
       >
         <div
           className="bg-slate-900 border border-purple-500/40 rounded-xl shadow-2xl shadow-purple-500/20 p-4 hover:shadow-purple-500/30 transition-all hover:scale-105 min-w-[320px]"
@@ -120,11 +116,9 @@ export function MinimizedDeploymentIndicator({
 
         {/* Mini progress bar */}
         <div className="mt-3 h-1 bg-slate-800 rounded-full overflow-hidden">
-          <motion.div
-            className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-teal-500"
-            initial={{ width: 0 }}
-            animate={{ width: `${progress.overallProgress}%` }}
-            transition={{ duration: 0.5 }}
+          <div
+            className="h-full bg-gradient-to-r from-blue-500 via-purple-500 to-teal-500 transition-all duration-500"
+            style={{ width: `${progress.overallProgress}%` }}
           />
         </div>
 
@@ -136,7 +130,7 @@ export function MinimizedDeploymentIndicator({
           Click to expand • Drag to move • ESC to minimize
         </p>
       </div>
-      </motion.div>
+      </div>
     </Draggable>
   );
 }
