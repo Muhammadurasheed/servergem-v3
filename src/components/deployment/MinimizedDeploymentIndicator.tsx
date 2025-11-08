@@ -32,18 +32,17 @@ export function MinimizedDeploymentIndicator({
   return (
     <Draggable
       handle=".drag-handle"
-      defaultPosition={{ x: 0, y: 0 }}
+      defaultPosition={{ x: window.innerWidth - 380, y: window.innerHeight - 250 }}
       onStart={() => setIsDragging(true)}
       onStop={() => {
         setTimeout(() => setIsDragging(false), 100);
       }}
-      bounds="parent"
     >
       <motion.div
-        className="fixed bottom-24 right-6 z-[60] cursor-move"
-        initial={{ y: 100, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 100, opacity: 0 }}
+        className="absolute z-[60]"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.9 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
         <div
