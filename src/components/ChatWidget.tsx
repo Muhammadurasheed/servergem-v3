@@ -66,7 +66,7 @@ const ChatWidget = ({ isOpen, onToggle, initialMessage, unreadCount = 0 }: ChatW
       )}
 
       {/* Toggle Button */}
-      <div className="fixed bottom-5 right-5 z-50">
+      <div className="fixed bottom-5 right-5 z-30">
         <button
           onClick={onToggle}
           onMouseEnter={() => setShowTooltip(true)}

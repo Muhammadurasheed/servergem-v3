@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/useAuth';
 import { useGitHub } from '@/hooks/useGitHub';
 import { toast } from 'sonner';
+import { ApiKeySettings } from '@/components/ApiKeySettings';
 import { 
   User, 
   Github, 
@@ -125,6 +126,19 @@ const Settings = () => {
                 </Button>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* API Configuration */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>API Configuration</CardTitle>
+            <CardDescription>
+              Configure your Gemini API key for AI features
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ApiKeySettings />
           </CardContent>
         </Card>
 

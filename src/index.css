@@ -173,6 +173,49 @@ All colors MUST be HSL.
   .pulse {
     @apply animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_infinite];
   }
+
+  /* Resize Handle Indicator */
+  .resize-handle-indicator {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .resize-handle-indicator::before {
+    content: '';
+    position: absolute;
+    bottom: 6px;
+    right: 2px;
+    width: 12px;
+    height: 2px;
+    background: linear-gradient(135deg, transparent 50%, hsl(var(--primary)) 50%);
+    transform: rotate(-45deg);
+  }
+
+  .resize-handle-indicator::after {
+    content: '';
+    position: absolute;
+    bottom: 2px;
+    right: 6px;
+    width: 8px;
+    height: 2px;
+    background: linear-gradient(135deg, transparent 50%, hsl(var(--primary)) 50%);
+    transform: rotate(-45deg);
+  }
+
+  .group:hover .resize-handle-indicator {
+    opacity: 0.6;
+  }
+
+  .group:hover .resize-handle-indicator:hover {
+    opacity: 1;
+  }
 }
 
 .deployment-panel-overlay {

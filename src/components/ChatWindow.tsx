@@ -128,27 +128,29 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   return (
     <div
       className={`
-        fixed z-40
+        fixed
         bg-background/95 backdrop-blur-xl
         border border-[rgba(139,92,246,0.3)]
         shadow-2xl
         flex flex-col
         transition-all duration-300 ease-in-out
         ${isMaximized 
-          ? 'inset-4 rounded-2xl' 
+          ? 'inset-4 rounded-2xl z-[100]' 
           : isMinimized 
-            ? 'bottom-5 right-5 w-[400px] h-[60px] rounded-2xl' 
-            : 'bottom-5 right-5 w-[400px] h-[600px] rounded-2xl resize overflow-hidden'
+            ? 'bottom-5 right-5 w-[400px] h-[60px] rounded-2xl z-40' 
+            : 'bottom-5 right-5 w-[400px] h-[600px] rounded-2xl z-40'
         }
         animate-in slide-in-from-bottom-4 fade-in duration-300
-        max-md:inset-5 max-md:max-w-none max-md:h-[calc(100vh-40px)]
+        max-md:inset-5 max-md:max-w-none max-md:h-[calc(100vh-40px)] max-md:z-[100]
+        group
       `}
       style={!isMaximized && !isMinimized ? { 
         resize: 'both',
         minWidth: '350px',
         minHeight: '400px',
         maxWidth: '90vw',
-        maxHeight: '90vh'
+        maxHeight: '90vh',
+        overflow: 'hidden'
       } : {}}
     >
       {/* Header */}
@@ -320,6 +322,11 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
             disabled={!isConnected || isTyping} 
           />
         </>
+      )}
+
+      {/* Resize Handle Indicator */}
+      {!isMaximized && !isMinimized && (
+        <div className="resize-handle-indicator" />
       )}
       
       {/* Deployment Progress Panel */}
