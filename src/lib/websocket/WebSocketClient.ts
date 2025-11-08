@@ -105,7 +105,8 @@ export class WebSocketClient {
    * Disconnect from WebSocket server
    */
   public disconnect(): void {
-    console.log('[WebSocket] Intentional disconnect');
+    console.log('[WebSocket] ⚠️ Disconnect requested');
+    console.log('[WebSocket] Call stack:', new Error().stack);
     this.isIntentionalClose = true;
     this.cleanup();
     this.updateConnectionStatus('disconnected');

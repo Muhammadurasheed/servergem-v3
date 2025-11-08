@@ -241,7 +241,8 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
                 progress_notifier = None
                 if might_deploy:
                     deployment_id = f"deploy-{uuid.uuid4().hex[:8]}"
-                    progress_notifier = ProgressNotifier(websocket, deployment_id)
+                    # Pass session_id and active_connections so notifier can use CURRENT connection
+                    progress_notifier = ProgressNotifier(session_id, deployment_id, active_connections)
                     print(f"[WebSocket] ✨ Created progress notifier: {deployment_id}")
                     
                     # Send deployment started notification

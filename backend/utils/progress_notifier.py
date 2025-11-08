@@ -11,9 +11,10 @@ from datetime import datetime
 class ProgressNotifier:
     """Sends real-time progress updates to frontend via WebSocket"""
     
-    def __init__(self, websocket, deployment_id: str):
-        self.websocket = websocket
+    def __init__(self, session_id: str, deployment_id: str, active_connections: dict):
+        self.session_id = session_id
         self.deployment_id = deployment_id
+        self.active_connections = active_connections
         self.current_stage = None
         self.stage_start_time = None
     
@@ -25,7 +26,7 @@ class ProgressNotifier:
         details: Optional[Dict[str, Any]] = None,
         progress: Optional[int] = None
     ):
-        """Send progress update to frontend with connection safety"""
+        """Send progress update to frontend with connection safety - uses CURRENT active connection"""
         
         payload = {
             "type": "deployment_progress",
@@ -42,23 +43,33 @@ class ProgressNotifier:
         if progress is not None:
             payload["progress"] = progress
         
+        # Get CURRENT active WebSocket for this session (handles reconnections!)
+        current_ws = self.active_connections.get(self.session_id)
+        
+        if not current_ws:
+            print(f"[ProgressNotifier] ⚠️ No active connection for session {self.session_id}")
+            return
+        
         # Send to frontend with safety checks
         try:
-            if hasattr(self.websocket, 'client_state'):
+            if hasattr(current_ws, 'client_state'):
                 # Check WebSocket state before sending
                 from fastapi.websockets import WebSocketState
-                if self.websocket.client_state == WebSocketState.CONNECTED:
-                    await self.websocket.send_json(payload)
+                if current_ws.client_state == WebSocketState.CONNECTED:
+                    await current_ws.send_json(payload)
                     print(f"[ProgressNotifier] ✅ {stage} - {status}")
                 else:
-                    print(f"[ProgressNotifier] ⚠️ Skipped (disconnected): {stage}")
+                    print(f"[ProgressNotifier] ⚠️ Connection not ready: {stage}")
             else:
                 # Fallback: try to send anyway
-                await self.websocket.send_json(payload)
+                await current_ws.send_json(payload)
                 print(f"[ProgressNotifier] ✅ {stage} - {status}")
         except RuntimeError as e:
             if "close message has been sent" in str(e) or "WebSocket is closed" in str(e):
-                print(f"[ProgressNotifier] ⚠️ WebSocket closed, skipping: {stage}")
+                print(f"[ProgressNotifier] ⚠️ WebSocket closed, removing from active_connections")
+                # Clean up dead connection
+                if self.session_id in self.active_connections:
+                    del self.active_connections[self.session_id]
             else:
                 print(f"[ProgressNotifier] ❌ RuntimeError: {e}")
         except Exception as e:

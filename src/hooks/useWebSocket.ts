@@ -24,7 +24,9 @@ export const useWebSocket = (): UseWebSocketReturn => {
   
   // Initialize client
   useEffect(() => {
-    console.log('[useWebSocket] Initializing WebSocket client');
+    console.log('[useWebSocket] 🔷 Initializing WebSocket client');
+    console.log('[useWebSocket] Component mounted, creating new client');
+    
     clientRef.current = new WebSocketClient();
     
     // Subscribe to connection changes
@@ -37,12 +39,13 @@ export const useWebSocket = (): UseWebSocketReturn => {
     
     // Cleanup on unmount
     return () => {
-      console.log('[useWebSocket] Cleaning up WebSocket client');
+      console.log('[useWebSocket] 🔷 Component unmounting - cleaning up WebSocket');
+      console.log('[useWebSocket] Call stack:', new Error().stack);
       unsubscribe();
       clientRef.current?.destroy();
       clientRef.current = null;
     };
-  }, []);
+  }, []); // Empty deps array - only run once on mount
   
   // ========================================================================
   // Methods
