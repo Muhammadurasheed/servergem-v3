@@ -27,7 +27,7 @@ export function MinimizedDeploymentIndicator({
 
   return (
     <motion.div
-      className="fixed bottom-6 right-6 z-40"
+      className="fixed bottom-24 right-6 z-[60]"
       initial={{ y: 100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 100, opacity: 0 }}

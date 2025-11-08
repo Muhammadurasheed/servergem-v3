@@ -25,13 +25,13 @@ class ProgressNotifier:
         details: Optional[Dict[str, Any]] = None,
         progress: Optional[int] = None
     ):
-        """Send progress update to frontend"""
+        """Send progress update to frontend with connection safety"""
         
         payload = {
             "type": "deployment_progress",
             "deployment_id": self.deployment_id,
             "stage": stage,
-            "status": status,  # 'waiting', 'in-progress', 'success', 'error'
+            "status": status,
             "message": message,
             "timestamp": datetime.now().isoformat()
         }
@@ -42,12 +42,27 @@ class ProgressNotifier:
         if progress is not None:
             payload["progress"] = progress
         
-        # Send to frontend
+        # Send to frontend with safety checks
         try:
-            await self.websocket.send_json(payload)
-            print(f"[ProgressNotifier] ✓ {stage} - {status}: {message}")
+            if hasattr(self.websocket, 'client_state'):
+                # Check WebSocket state before sending
+                from fastapi.websockets import WebSocketState
+                if self.websocket.client_state == WebSocketState.CONNECTED:
+                    await self.websocket.send_json(payload)
+                    print(f"[ProgressNotifier] ✅ {stage} - {status}")
+                else:
+                    print(f"[ProgressNotifier] ⚠️ Skipped (disconnected): {stage}")
+            else:
+                # Fallback: try to send anyway
+                await self.websocket.send_json(payload)
+                print(f"[ProgressNotifier] ✅ {stage} - {status}")
+        except RuntimeError as e:
+            if "close message has been sent" in str(e) or "WebSocket is closed" in str(e):
+                print(f"[ProgressNotifier] ⚠️ WebSocket closed, skipping: {stage}")
+            else:
+                print(f"[ProgressNotifier] ❌ RuntimeError: {e}")
         except Exception as e:
-            print(f"[ProgressNotifier] ✗ Error sending update: {e}")
+            print(f"[ProgressNotifier] ❌ Error: {e}")
     
     async def start_stage(self, stage: str, message: str):
         """Mark stage as started"""

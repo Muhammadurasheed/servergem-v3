@@ -128,8 +128,8 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
         ${isMaximized 
           ? 'inset-4 rounded-2xl z-[100]' 
           : isMinimized 
-            ? 'bottom-5 right-5 w-[400px] h-[60px] rounded-2xl z-40' 
-            : 'bottom-5 right-5 w-[400px] h-[600px] rounded-2xl z-40'
+            ? 'bottom-5 right-5 w-[400px] h-[60px] rounded-2xl z-30' 
+            : 'bottom-5 right-5 w-[400px] h-[600px] rounded-2xl z-30'
         }
         animate-in slide-in-from-bottom-4 fade-in duration-300
         max-md:inset-5 max-md:max-w-none max-md:h-[calc(100vh-40px)] max-md:z-[100]

@@ -115,14 +115,23 @@ class GitHubService:
                 if 'github.com' in repo_url:
                     repo_url = repo_url.replace('https://', f'https://{self.token}@')
             
-            # Clone the repository
-            print(f"[GitHubService] Cloning {repo_url} to {local_path}")
+            # Clone the repository with optimizations
+            print(f"[GitHubService] 🚀 Fast cloning {repo_url}...")
             
+            # Use optimized git clone flags for maximum speed
             result = subprocess.run(
-                ['git', 'clone', '--depth', '1', '--branch', branch, repo_url, str(local_path)],
+                [
+                    'git', 'clone',
+                    '--depth', '1',              # Shallow clone (fastest)
+                    '--single-branch',           # Only clone one branch
+                    '--no-tags',                 # Skip tags (faster)
+                    '--branch', branch,
+                    repo_url, 
+                    str(local_path)
+                ],
                 capture_output=True,
                 text=True,
-                timeout=300  # 5 minute timeout
+                timeout=120  # Reduced to 2 minutes for faster feedback
             )
             
             if result.returncode != 0:
