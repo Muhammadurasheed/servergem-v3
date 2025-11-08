@@ -9,7 +9,7 @@ import { useWebSocket } from './useWebSocket';
 import { UseChatReturn, ChatMessage, ServerMessage } from '@/types/websocket';
 import { useToast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
-import { DeploymentProgress, DEPLOYMENT_STAGES } from '@/types/deployment';
+import { DeploymentProgress, DEPLOYMENT_STAGES, DeploymentStageStatus } from '@/types/deployment';
 import { parseBackendLog, calculateDuration, generateDeploymentId } from '@/lib/websocket/deploymentParser';
 import { Button } from '@/components/ui/button';
 import { ExternalLink } from 'lucide-react';
@@ -201,6 +201,61 @@ export const useChat = (): UseChatReturn => {
         console.log('[useChat] Setting typing to true');
         setIsTyping(true);
         break;
+      
+      case 'deployment_started':
+        console.log('[useChat] 🚀 Deployment started:', (serverMessage as any).deployment_id);
+        setIsTyping(false);
+        
+        // Initialize deployment progress with all stages as waiting
+        setDeploymentProgress({
+          deploymentId: (serverMessage as any).deployment_id || generateDeploymentId(),
+          serviceName: 'Your App',
+          stages: DEPLOYMENT_STAGES.map(stage => ({ ...stage })),
+          currentStage: '',
+          overallProgress: 0,
+          startTime: new Date().toISOString(),
+          status: 'deploying',
+        });
+        break;
+      
+      case 'deployment_progress':
+        console.log('[useChat] 📊 Deployment progress:', (serverMessage as any).stage, (serverMessage as any).status);
+        
+        setDeploymentProgress((prev) => {
+          if (!prev) return null;
+          
+          const progressMsg = serverMessage as any;
+          const updatedStages = prev.stages.map(stage => {
+            if (stage.id === progressMsg.stage) {
+              return {
+                ...stage,
+                status: progressMsg.status as DeploymentStageStatus,
+                message: progressMsg.message,
+                details: progressMsg.details ? Object.entries(progressMsg.details).map(([k, v]) => `${k}: ${v}`) : [],
+                startTime: progressMsg.status === 'in-progress' ? new Date().toISOString() : stage.startTime,
+                endTime: progressMsg.status === 'success' || progressMsg.status === 'error' 
+                  ? new Date().toISOString() 
+                  : stage.endTime,
+                duration: progressMsg.status === 'success' || progressMsg.status === 'error'
+                  ? calculateDuration(stage.startTime || new Date().toISOString(), new Date().toISOString())
+                  : undefined,
+              };
+            }
+            return stage;
+          });
+          
+          // Calculate overall progress based on completed stages
+          const completedStages = updatedStages.filter(s => s.status === 'success').length;
+          const overallProgress = Math.round((completedStages / updatedStages.length) * 100);
+          
+          return {
+            ...prev,
+            stages: updatedStages,
+            currentStage: progressMsg.stage,
+            overallProgress: progressMsg.progress || overallProgress,
+          };
+        });
+        break;
         
       case 'message':
         console.log('[useChat] Setting typing to false, adding message');
@@ -296,7 +351,7 @@ export const useChat = (): UseChatReturn => {
       default:
         console.warn('[useChat] Unknown message type:', serverMessage);
     }
-  }, [addAssistantMessage, addAnalysisMessage, updateDeploymentProgress, addDeploymentCompleteMessage, handleErrorMessage, updateDeploymentStage, deploymentProgress]);
+  }, [addAssistantMessage, addAnalysisMessage, updateDeploymentProgress, addDeploymentCompleteMessage, handleErrorMessage, updateDeploymentStage, deploymentProgress, navigate]);
   
   useEffect(() => {
     const unsubscribe = onMessage((serverMessage: ServerMessage) => {

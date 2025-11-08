@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import asyncio
 from datetime import datetime
 import json
+import uuid
 
 from agents.orchestrator import OrchestratorAgent
 from services.deployment_service import deployment_service
@@ -19,6 +20,11 @@ from services.user_service import user_service
 from services.usage_service import usage_service
 from middleware.usage_tracker import UsageTrackingMiddleware
 from models import DeploymentStatus, PlanTier
+
+# Import progress notifier
+import sys
+sys.path.append(os.path.dirname(__file__))
+from utils.progress_notifier import ProgressNotifier, DeploymentStages
 
 load_dotenv()
 
@@ -227,24 +233,31 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
                     'timestamp': datetime.now().isoformat()
                 })
                 
-                # Progress callback for real-time updates
-                async def progress_callback(update):
-                    """Stream progress updates via WebSocket"""
-                    try:
-                        # Check if connection is still open
-                        if session_id in active_connections:
-                            await websocket.send_json(update)
-                    except Exception as e:
-                        # Connection closed - silently handle
-                        print(f"[WebSocket] Could not send progress update: {e}")
-                        pass
+                # Check if this might trigger deployment (simple heuristic)
+                deployment_keywords = ['deploy', 'start', 'begin', 'launch', 'go ahead', 'yes', 'proceed']
+                might_deploy = any(keyword in message.lower() for keyword in deployment_keywords)
+                
+                # If might deploy, create progress notifier
+                progress_notifier = None
+                if might_deploy:
+                    deployment_id = f"deploy-{uuid.uuid4().hex[:8]}"
+                    progress_notifier = ProgressNotifier(websocket, deployment_id)
+                    print(f"[WebSocket] ✨ Created progress notifier: {deployment_id}")
+                    
+                    # Send deployment started notification
+                    await websocket.send_json({
+                        "type": "deployment_started",
+                        "deployment_id": deployment_id,
+                        "message": "🚀 Starting deployment process...",
+                        "timestamp": datetime.now().isoformat()
+                    })
                 
                 # Process message with user's orchestrator (with progress streaming)
                 try:
                     response = await user_orchestrator.process_message(
                         message,
                         session_id,
-                        progress_callback=progress_callback
+                        progress_notifier=progress_notifier
                     )
                     
                     # Send final response

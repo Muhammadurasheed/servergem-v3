@@ -33,7 +33,9 @@ export type ServerMessageType =
   | 'typing'              // AI is processing
   | 'message'             // AI response message
   | 'analysis'            // Code analysis result
-  | 'deployment_update'   // Deployment progress update
+  | 'deployment_started'  // Deployment process started
+  | 'deployment_progress' // Real-time deployment progress
+  | 'deployment_update'   // Deployment progress update (legacy)
   | 'deployment_complete' // Deployment finished
   | 'error'               // Error occurred
   | 'pong';               // Heartbeat response
@@ -126,6 +128,24 @@ export interface ServerDeploymentUpdate {
   timestamp: string;
 }
 
+export interface ServerDeploymentStarted {
+  type: 'deployment_started';
+  deployment_id: string;
+  message: string;
+  timestamp: string;
+}
+
+export interface ServerDeploymentProgress {
+  type: 'deployment_progress';
+  deployment_id: string;
+  stage: string;
+  status: string;
+  message: string;
+  details?: Record<string, any>;
+  progress?: number;
+  timestamp: string;
+}
+
 export interface ServerDeploymentComplete {
   type: 'deployment_complete';
   data: {
@@ -154,6 +174,8 @@ export type ServerMessage =
   | ServerTypingMessage
   | ServerChatMessage
   | ServerAnalysisMessage
+  | ServerDeploymentStarted
+  | ServerDeploymentProgress
   | ServerDeploymentUpdate
   | ServerDeploymentComplete
   | ServerErrorMessage

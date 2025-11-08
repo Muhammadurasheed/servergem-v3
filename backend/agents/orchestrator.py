@@ -17,6 +17,9 @@ import json
 import uuid
 import os
 from dataclasses import dataclass
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from utils.progress_notifier import ProgressNotifier, DeploymentStages
 
 
 @dataclass
@@ -237,6 +240,7 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         self, 
         user_message: str, 
         session_id: str, 
+        progress_notifier: Optional[ProgressNotifier] = None,
         progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
@@ -274,6 +278,7 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
                             # Route to real service handler
                             function_result = await self._handle_function_call(
                                 part.function_call,
+                                progress_notifier=progress_notifier,
                                 progress_callback=progress_callback
                             )
                             
@@ -341,6 +346,7 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
     async def _handle_function_call(
         self, 
         function_call, 
+        progress_notifier: Optional[ProgressNotifier] = None,
         progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
@@ -367,7 +373,7 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         handler = handlers.get(function_name)
         
         if handler:
-            return await handler(progress_callback=progress_callback, **args)
+            return await handler(progress_notifier=progress_notifier, progress_callback=progress_callback, **args)
         else:
             return {
                 'type': 'error',
@@ -383,27 +389,31 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
         self, 
         repo_url: str, 
         branch: str = 'main', 
+        progress_notifier: Optional[ProgressNotifier] = None,
         progress_callback: Optional[Callable] = None
     ) -> Dict[str, Any]:
         """
-        Clone GitHub repo and analyze it - REAL IMPLEMENTATION
+        Clone GitHub repo and analyze it - REAL IMPLEMENTATION with real-time progress
         Uses: GitHubService, AnalysisService, DockerService
         """
         
         try:
-            # Create progress tracker for structured updates
-            tracker = self.create_progress_tracker(
-                deployment_id=f"analysis-{int(datetime.now().timestamp())}",
-                service_name=repo_url.split('/')[-1].replace('.git', ''),
-                progress_callback=progress_callback
-            )
-            
-            # Step 1: Clone repository using GitHubService
-            await tracker.start_repo_clone(repo_url)
+            # STAGE 1: Repository Cloning
+            if progress_notifier:
+                await progress_notifier.start_stage(
+                    DeploymentStages.REPO_CLONE,
+                    "📦 Cloning repository from GitHub..."
+                )
             
             clone_result = self.github_service.clone_repository(repo_url, branch)
             
             if not clone_result.get('success'):
+                if progress_notifier:
+                    await progress_notifier.fail_stage(
+                        DeploymentStages.REPO_CLONE,
+                        f"Failed to clone: {clone_result.get('error')}",
+                        details={"error": clone_result.get('error')}
+                    )
                 return {
                     'type': 'error',
                     'content': f"❌ **Failed to clone repository**\n\n{clone_result.get('error')}\n\nPlease check:\n• Repository URL is correct\n• You have access to the repository\n• GitHub token has proper permissions",
@@ -415,57 +425,73 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
             self.project_context['repo_url'] = repo_url
             self.project_context['branch'] = branch
             
-            # Emit clone completion with details
-            await tracker.complete_repo_clone(
-                project_path,
-                clone_result.get('files_count', 0),
-                clone_result.get('size_mb', 0.0)
-            )
+            if progress_notifier:
+                await progress_notifier.complete_stage(
+                    DeploymentStages.REPO_CLONE,
+                    f"✅ Repository cloned ({clone_result['files_count']} files)",
+                    details={
+                        "repo_name": clone_result['repo_name'],
+                        "files": clone_result['files_count'],
+                        "size": f"{clone_result['size_mb']} MB"
+                    }
+                )
             
             # Step 2: Analyze project using AnalysisService
-            await tracker.start_code_analysis(project_path)
+            if progress_notifier:
+                await progress_notifier.start_stage(
+                    DeploymentStages.CODE_ANALYSIS,
+                    "🔍 Analyzing project structure and dependencies..."
+                )
             
             analysis_result = await self.analysis_service.analyze_and_generate(project_path)
             
             if not analysis_result.get('success'):
-                await tracker.emit_error(
-                    'code_analysis', 
-                    analysis_result.get('error', 'Unknown error')
-                )
+                if progress_notifier:
+                    await progress_notifier.fail_stage(
+                        DeploymentStages.CODE_ANALYSIS,
+                        f"Analysis failed: {analysis_result.get('error')}",
+                        details={"error": analysis_result.get('error')}
+                    )
                 return {
                     'type': 'error',
                     'content': f"❌ **Analysis failed**\n\n{analysis_result.get('error')}",
                     'timestamp': datetime.now().isoformat()
                 }
             
-            # Emit framework and dependency detection
             analysis_data = analysis_result['analysis']
-            await tracker.emit_framework_detection(
-                analysis_data['framework'],
-                analysis_data['language'],
-                analysis_data.get('runtime', 'latest')
-            )
-            await tracker.emit_dependency_analysis(
-                analysis_data.get('dependencies_count', 0),
-                analysis_data.get('database')
-            )
-            await tracker.complete_code_analysis()
+            
+            if progress_notifier:
+                await progress_notifier.complete_stage(
+                    DeploymentStages.CODE_ANALYSIS,
+                    f"✅ Analysis complete: {analysis_data['framework']} detected",
+                    details={
+                        "framework": analysis_data['framework'],
+                        "language": analysis_data['language'],
+                        "dependencies": analysis_data.get('dependencies_count', 0)
+                    }
+                )
             
             # Step 3: Generate and save Dockerfile
-            await tracker.start_dockerfile_generation(analysis_data['framework'])
-            
-            await tracker.emit_dockerfile_optimization(
-                analysis_result['dockerfile']['optimizations']
-            )
+            if progress_notifier:
+                await progress_notifier.start_stage(
+                    DeploymentStages.DOCKERFILE_GEN,
+                    "🐳 Generating optimized Dockerfile..."
+                )
             
             dockerfile_save = self.docker_service.save_dockerfile(
                 analysis_result['dockerfile']['content'],
                 project_path
             )
             
-            await tracker.complete_dockerfile_generation(
-                dockerfile_save.get('path', f'{project_path}/Dockerfile')
-            )
+            if progress_notifier:
+                await progress_notifier.complete_stage(
+                    DeploymentStages.DOCKERFILE_GEN,
+                    "✅ Dockerfile generated with optimizations",
+                    details={
+                        "path": dockerfile_save.get('path', f'{project_path}/Dockerfile'),
+                        "optimizations": len(analysis_result['dockerfile'].get('optimizations', []))
+                    }
+                )
             
             # Step 4: Create .dockerignore
             self.docker_service.create_dockerignore(
