@@ -1,18 +1,17 @@
 /**
  * High-level Chat Hook
  * Abstracts WebSocket complexity for chat UI
+ * Now uses app-level WebSocket context for persistent connection
  */
 
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useWebSocket } from './useWebSocket';
+import { useWebSocketContext } from '@/contexts/WebSocketContext';
 import { UseChatReturn, ChatMessage, ServerMessage } from '@/types/websocket';
 import { useToast } from '@/hooks/use-toast';
 import { toast as sonnerToast } from 'sonner';
 import { DeploymentProgress, DEPLOYMENT_STAGES, DeploymentStageStatus } from '@/types/deployment';
 import { parseBackendLog, calculateDuration, generateDeploymentId } from '@/lib/websocket/deploymentParser';
-import { Button } from '@/components/ui/button';
-import { ExternalLink } from 'lucide-react';
 
 /**
  * Hook for chat functionality
@@ -25,9 +24,7 @@ export const useChat = (): UseChatReturn => {
     isConnected, 
     sendMessage: wsSendMessage,
     onMessage,
-    connect: wsConnect,
-    disconnect: wsDisconnect,
-  } = useWebSocket();
+  } = useWebSocketContext();
   
   const { toast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -133,10 +130,6 @@ export const useChat = (): UseChatReturn => {
       variant: 'destructive',
     });
   }, [toast]);
-  
-  // ========================================================================
-  // Message Handlers
-  // ========================================================================
   
   // ========================================================================
   // Deployment Progress Management
@@ -493,7 +486,7 @@ export const useChat = (): UseChatReturn => {
           : 'Connection restored.',
       });
     }
-  }, [connectionStatus, deploymentProgress, toast]);
+  }, [connectionStatus, toast, deploymentProgress]);
   
   // ========================================================================
   // Return
@@ -503,64 +496,32 @@ export const useChat = (): UseChatReturn => {
     messages,
     isConnected,
     isTyping,
-    connectionStatus,
     sendMessage,
-    sendStructuredMessage,
     clearMessages,
-    connect: wsConnect,
-    disconnect: wsDisconnect,
+    connectionStatus,
+    sendStructuredMessage,
     deploymentProgress,
     setDeploymentProgress,
+    connect: () => console.log('[useChat] connect() is handled by WebSocketProvider'),
+    disconnect: () => console.log('[useChat] disconnect() is handled by WebSocketProvider'),
   };
 };
 
-// ============================================================================
-// Formatting Helpers
-// ============================================================================
+// ========================================================================
+// Helper Functions
+// ========================================================================
 
 function formatAnalysisMessage(data: any): string {
-  return `
-🔍 **Analysis Complete**
-
-**Framework:** ${data.framework} (${data.language})
-**Entry Point:** \`${data.entry_point || 'Not found'}\`
-**Dependencies:** ${data.dependencies.length} packages
-${data.database ? `**Database:** ${data.database}` : ''}
-${data.env_vars.length > 0 ? `**Environment Variables:** ${data.env_vars.length} detected` : ''}
-
-${data.recommendations.length > 0 ? `\n**Recommendations:**\n${data.recommendations.map((r: string) => `• ${r}`).join('\n')}` : ''}
-
-${data.warnings.length > 0 ? `\n**Warnings:**\n${data.warnings.map((w: string) => `• ${w}`).join('\n')}` : ''}
-  `.trim();
+  return `**Analysis Complete** ✅\n\n${data.summary || 'No summary available'}`;
 }
 
 function formatDeploymentProgress(data: any): string {
-  return `
-🚀 **Deploying...**
-
-**Stage:** ${data.stage}
-**Progress:** ${data.progress}%
-
-${data.message}
-
-${data.logs ? `\n\`\`\`\n${data.logs.slice(-5).join('\n')}\n\`\`\`` : ''}
-  `.trim();
+  const progress = data.progress || 0;
+  const stage = data.stage || 'unknown';
+  
+  return `**Deployment Progress** 🚀\n\nStage: ${stage}\nProgress: ${progress}%`;
 }
 
 function formatDeploymentComplete(data: any): string {
-  return `
-🎉 **Deployment Successful!**
-
-Your app is live at:
-
-**Service:** ${data.service_name}
-**Region:** ${data.region}
-
-✅ Auto HTTPS enabled
-✅ Auto-scaling configured
-✅ Health checks active
-✅ Monitoring enabled
-
-What would you like to do next?
-  `.trim();
+  return `**Deployment Complete!** 🎉\n\nYour app is now live at:\n${data.url}`;
 }
