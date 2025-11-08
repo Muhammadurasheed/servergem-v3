@@ -31,6 +31,8 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
   const [showDeploymentPanel, setShowDeploymentPanel] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
+  const isReconnecting = connectionStatus.state === 'reconnecting';
+  
   // Debug: Log ChatWindow state
   useEffect(() => {
     console.log('[ChatWindow] isConnected:', isConnected, 'isTyping:', isTyping, 'disabled will be:', !isConnected || isTyping);
@@ -147,6 +149,28 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
       {/* Header */}
       <div className="relative border-b border-[rgba(139,92,246,0.3)] bg-gradient-to-r from-[#8b5cf6]/10 to-[#06b6d4]/10">
         <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-[#8b5cf6] to-[#06b6d4]" />
+        
+        {/* Connection Status Banner */}
+        {!isConnected && !isMinimized && (
+          <div className="border-b border-border">
+            {isReconnecting ? (
+              <div className="bg-yellow-500/10 border-b border-yellow-500/30 px-4 py-1.5 flex items-center justify-center gap-2">
+                <Loader2 className="w-3 h-3 animate-spin text-yellow-400" />
+                <span className="text-xs text-yellow-400">
+                  Reconnecting... {connectionStatus.reconnectAttempt ? `(Attempt ${connectionStatus.reconnectAttempt})` : ''}
+                </span>
+              </div>
+            ) : (
+              <div className="bg-red-500/10 border-b border-red-500/30 px-4 py-1.5 flex items-center justify-center gap-2">
+                <WifiOff className="w-3 h-3 text-red-400" />
+                <span className="text-xs text-red-400">
+                  Disconnected from server
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <div className="relative">
@@ -307,7 +331,7 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
           {/* Input Area */}
           <ChatInput 
             onSendMessage={sendMessage} 
-            disabled={!isConnected || isTyping} 
+            disabled={!isConnected || isTyping || isReconnecting} 
           />
         </>
       )}

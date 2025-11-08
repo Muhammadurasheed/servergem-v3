@@ -222,7 +222,26 @@ export const useChat = (): UseChatReturn => {
         console.log('[useChat] 📊 Deployment progress:', (serverMessage as any).stage, (serverMessage as any).status);
         
         setDeploymentProgress((prev) => {
-          if (!prev) return null;
+          // If we receive progress but no deployment exists, create one
+          // This handles reconnection scenarios where we missed deployment_started
+          if (!prev) {
+            console.warn('[useChat] ⚠️ Received progress but no deployment exists, creating new deployment state');
+            const progressMsg = serverMessage as any;
+            
+            return {
+              deploymentId: progressMsg.deployment_id || generateDeploymentId(),
+              serviceName: 'Your App',
+              stages: DEPLOYMENT_STAGES.map(stage => ({
+                ...stage,
+                status: stage.id === progressMsg.stage ? progressMsg.status : 'waiting',
+                message: stage.id === progressMsg.stage ? progressMsg.message : 'Waiting...',
+              })),
+              currentStage: progressMsg.stage,
+              overallProgress: 0,
+              startTime: new Date().toISOString(),
+              status: 'deploying',
+            };
+          }
           
           const progressMsg = serverMessage as any;
           const updatedStages = prev.stages.map(stage => {
@@ -464,8 +483,17 @@ export const useChat = (): UseChatReturn => {
         title: 'Reconnecting...',
         description: `Attempt ${connectionStatus.reconnectAttempt || 1}`,
       });
+    } else if (connectionStatus.state === 'connected' && connectionStatus.reconnectAttempt) {
+      // Successfully reconnected
+      console.log('[useChat] ✅ Successfully reconnected!');
+      toast({
+        title: 'Reconnected!',
+        description: deploymentProgress 
+          ? 'Deployment updates will resume.' 
+          : 'Connection restored.',
+      });
     }
-  }, [connectionStatus, toast]);
+  }, [connectionStatus, deploymentProgress, toast]);
   
   // ========================================================================
   // Return

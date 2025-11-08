@@ -193,7 +193,8 @@ export class WebSocketClient {
   }
   
   private handleOpen(): void {
-    console.log('[WebSocket] Connected');
+    console.log('[WebSocket] ✅ Connected successfully to server');
+    console.log('[WebSocket] Session ID:', this.sessionId);
     this.reconnectAttempts = 0;
     this.updateConnectionStatus('connected', undefined);
     
@@ -209,11 +210,15 @@ export class WebSocketClient {
     
     // Start heartbeat
     if (this.config.heartbeat.enabled) {
+      console.log('[WebSocket] 🏓 Starting heartbeat (15s interval, 30s timeout)');
       this.startHeartbeat();
     }
     
     // Send queued messages
-    this.flushMessageQueue();
+    if (this.messageQueue.length > 0) {
+      console.log(`[WebSocket] 📤 Flushing ${this.messageQueue.length} queued messages`);
+      this.flushMessageQueue();
+    }
   }
   
   private handleMessage(event: MessageEvent): void {
@@ -249,14 +254,19 @@ export class WebSocketClient {
   }
   
   private handleClose(event: CloseEvent): void {
-    console.log('[WebSocket] Connection closed:', event.code, event.reason);
+    console.log('[WebSocket] 🔌 Connection closed');
+    console.log('[WebSocket] Close code:', event.code);
+    console.log('[WebSocket] Close reason:', event.reason || 'No reason provided');
+    console.log('[WebSocket] Was intentional:', this.isIntentionalClose);
     
     this.stopHeartbeat();
     
     if (!this.isIntentionalClose) {
+      console.log('[WebSocket] 🔄 Connection lost, will attempt to reconnect...');
       this.updateConnectionStatus('reconnecting');
       this.handleReconnect();
     } else {
+      console.log('[WebSocket] ✅ Clean disconnect');
       this.updateConnectionStatus('disconnected');
     }
   }
@@ -302,21 +312,22 @@ export class WebSocketClient {
   private startHeartbeat(): void {
     this.stopHeartbeat();
     
+    // More frequent heartbeat (every 15 seconds) for long-running deployments
     this.heartbeatTimer = setInterval(() => {
       if (this.isConnected()) {
-        console.log('[WebSocket] Sending ping');
+        console.log('[WebSocket] 🏓 Sending heartbeat ping');
         this.sendMessage({
           type: 'ping',
           timestamp: new Date().toISOString(),
         });
         
-        // Set timeout for pong response
+        // Longer timeout (30 seconds) for long-running operations like deployments
         this.heartbeatTimeoutTimer = setTimeout(() => {
-          console.error('[WebSocket] Heartbeat timeout - no pong received');
+          console.warn('[WebSocket] ⚠️ Heartbeat timeout - no pong received, reconnecting...');
           this.ws?.close();
-        }, this.config.heartbeat.timeout);
+        }, 30000); // 30 second timeout for pong
       }
-    }, this.config.heartbeat.interval);
+    }, 15000); // Send ping every 15 seconds
   }
   
   private stopHeartbeat(): void {
@@ -331,7 +342,7 @@ export class WebSocketClient {
   }
   
   private handlePong(): void {
-    console.log('[WebSocket] Received pong');
+    console.log('[WebSocket] 🏓 Received pong - connection healthy');
     if (this.heartbeatTimeoutTimer) {
       clearTimeout(this.heartbeatTimeoutTimer);
       this.heartbeatTimeoutTimer = null;
