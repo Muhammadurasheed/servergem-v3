@@ -90,13 +90,38 @@ async def chat(message: ChatMessage):
 
 
 @app.websocket("/ws/chat")
-async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time chat with heartbeat support"""
+async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Query(None)):
+    """WebSocket endpoint for real-time chat with user API key support"""
     
     session_id = None
+    user_api_key = api_key
     
     try:
+        # Get API key from query params or use default
+        if not user_api_key:
+            user_api_key = os.getenv('GEMINI_API_KEY')
+        
+        # Check if API key is available
+        if not user_api_key:
+            await websocket.close(code=1008, reason="API key required")
+            return
+        
         await websocket.accept()
+        
+        # Test API key validity by configuring Gemini
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=user_api_key)
+            print(f"[WebSocket] Using {'user-provided' if api_key else 'default'} API key")
+        except Exception as e:
+            await websocket.send_json({
+                'type': 'error',
+                'message': 'Invalid API key. Please check your Gemini API key in Settings.',
+                'code': 'INVALID_API_KEY',
+                'timestamp': datetime.now().isoformat()
+            })
+            await websocket.close(code=1008)
+            return
         
         # Receive initial connection message with session_id
         init_message = await websocket.receive_json()
@@ -109,6 +134,13 @@ async def websocket_endpoint(websocket: WebSocket):
         session_id = init_message.get('session_id', 'unknown')
         
         active_connections[session_id] = websocket
+        
+        # Create orchestrator with user's API key
+        user_orchestrator = OrchestratorAgent(
+            gemini_api_key=user_api_key,
+            github_token=os.getenv('GITHUB_TOKEN'),
+            gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
+        )
         
         # Send connection confirmation
         await websocket.send_json({
@@ -155,19 +187,45 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"[WebSocket] Could not send progress update: {e}")
                         pass
                 
-                # Process message with orchestrator (with progress streaming)
-                response = await orchestrator.process_message(
-                    message,
-                    session_id,
-                    progress_callback=progress_callback
-                )
-                
-                # Send final response
-                await websocket.send_json({
-                    'type': 'message',
-                    'data': response,
-                    'timestamp': datetime.now().isoformat()
-                })
+                # Process message with user's orchestrator (with progress streaming)
+                try:
+                    response = await user_orchestrator.process_message(
+                        message,
+                        session_id,
+                        progress_callback=progress_callback
+                    )
+                    
+                    # Send final response
+                    await websocket.send_json({
+                        'type': 'message',
+                        'data': response,
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                except Exception as e:
+                    error_msg = str(e)
+                    # Check for API quota errors
+                    if '429' in error_msg or 'quota' in error_msg.lower():
+                        await websocket.send_json({
+                            'type': 'error',
+                            'message': 'API quota exceeded. Please check your Gemini API quota or try again later.',
+                            'code': 'QUOTA_EXCEEDED',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    elif '401' in error_msg or '403' in error_msg or 'invalid' in error_msg.lower():
+                        await websocket.send_json({
+                            'type': 'error',
+                            'message': 'Invalid API key. Please update your Gemini API key in Settings.',
+                            'code': 'INVALID_API_KEY',
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    else:
+                        await websocket.send_json({
+                            'type': 'error',
+                            'message': f'Error processing message: {error_msg}',
+                            'code': 'API_ERROR',
+                            'timestamp': datetime.now().isoformat()
+                        })
     
     except WebSocketDisconnect:
         if session_id and session_id in active_connections:

@@ -4,17 +4,22 @@
  */
 
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import { UseChatReturn, ChatMessage, ServerMessage } from '@/types/websocket';
 import { useToast } from '@/hooks/use-toast';
+import { toast as sonnerToast } from 'sonner';
 import { DeploymentProgress, DEPLOYMENT_STAGES } from '@/types/deployment';
 import { parseBackendLog, calculateDuration, generateDeploymentId } from '@/lib/websocket/deploymentParser';
+import { Button } from '@/components/ui/button';
+import { ExternalLink } from 'lucide-react';
 
 /**
  * Hook for chat functionality
  * Manages messages, typing state, and connection status
  */
 export const useChat = (): UseChatReturn => {
+  const navigate = useNavigate();
   const { 
     connectionStatus, 
     isConnected, 
@@ -243,6 +248,33 @@ export const useChat = (): UseChatReturn => {
         
       case 'error':
         setIsTyping(false);
+        
+        // Handle specific error codes
+        const errorCode = (serverMessage as any).code;
+        
+        if (errorCode === 'API_KEY_REQUIRED' || errorCode === 'INVALID_API_KEY') {
+          sonnerToast.error(
+            serverMessage.message,
+            {
+              duration: 10000,
+              action: {
+                label: 'Add API Key',
+                onClick: () => navigate('/settings')
+              },
+            }
+          );
+        } else if (errorCode === 'QUOTA_EXCEEDED') {
+          sonnerToast.error(
+            serverMessage.message,
+            {
+              duration: 10000,
+              action: {
+                label: 'Check Quota',
+                onClick: () => window.open('https://ai.google.dev/aistudio', '_blank')
+              },
+            }
+          );
+        }
         
         // Mark deployment as failed if active
         if (deploymentProgress) {

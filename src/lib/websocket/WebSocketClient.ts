@@ -74,7 +74,12 @@ export class WebSocketClient {
     this.updateConnectionStatus('connecting');
     
     try {
-      this.ws = new WebSocket(this.config.url);
+      // Get API key from localStorage
+      const apiKey = localStorage.getItem('servergemApiKey') || '';
+      const url = apiKey ? `${this.config.url}?api_key=${encodeURIComponent(apiKey)}` : this.config.url;
+      
+      console.log('[WebSocket] Connecting with API key:', apiKey ? 'Yes' : 'No');
+      this.ws = new WebSocket(url);
       this.setupEventHandlers();
       
       // Connection timeout
