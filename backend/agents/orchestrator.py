@@ -438,7 +438,22 @@ Be concise, helpful, and NEVER mention gcloud setup or GCP authentication.
                     "🔍 Analyzing project structure and dependencies..."
                 )
             
-            analysis_result = await self.analysis_service.analyze_and_generate(project_path)
+            try:
+                analysis_result = await self.analysis_service.analyze_and_generate(project_path)
+            except Exception as e:
+                error_msg = str(e)
+                # Check if it's a quota error
+                if '429' in error_msg or 'quota' in error_msg.lower() or 'resource exhausted' in error_msg.lower():
+                    if progress_notifier:
+                        await progress_notifier.fail_stage(
+                            DeploymentStages.CODE_ANALYSIS,
+                            "❌ API Quota Exceeded",
+                            details={"error": "Gemini API quota limit reached"}
+                        )
+                    # This will trigger error handling in app.py
+                    raise Exception(f"🚨 Gemini API Quota Exceeded. Please check your API quota at https://ai.google.dev/ and try again later.")
+                else:
+                    raise e
             
             if not analysis_result.get('success'):
                 if progress_notifier:

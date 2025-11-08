@@ -329,6 +329,24 @@ export const useChat = (): UseChatReturn => {
               },
             }
           );
+          
+          // Add error message to chat
+          const errorMessage: ChatMessage = {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: `❌ **API Quota Exceeded**\n\n${serverMessage.message}\n\n**What to do:**\n• Check your Gemini API quota at [Google AI Studio](https://ai.google.dev/aistudio)\n• Wait a few minutes for the quota to reset\n• Consider upgrading your API plan if you need higher limits`,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, errorMessage]);
+        } else {
+          // For other errors, also show in chat
+          const errorMessage: ChatMessage = {
+            id: `msg_${Date.now()}`,
+            role: 'assistant',
+            content: `❌ **Error**\n\n${serverMessage.message}`,
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, errorMessage]);
         }
         
         // Mark deployment as failed if active

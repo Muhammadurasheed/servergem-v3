@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { DeploymentProgress } from '@/types/deployment';
-import { Loader2, X } from 'lucide-react';
+import { Loader2, X, Move } from 'lucide-react';
+import Draggable from 'react-draggable';
+import { useState } from 'react';
 
 interface MinimizedDeploymentIndicatorProps {
   progress: DeploymentProgress;
@@ -13,6 +15,8 @@ export function MinimizedDeploymentIndicator({
   onExpand,
   onClose,
 }: MinimizedDeploymentIndicatorProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  
   const getCurrentStageLabel = () => {
     const stageLabels: Record<string, string> = {
       repo_clone: 'Cloning repository...',
@@ -26,20 +30,36 @@ export function MinimizedDeploymentIndicator({
   };
 
   return (
-    <motion.div
-      className="fixed bottom-24 right-6 z-[60]"
-      initial={{ y: 100, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 100, opacity: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+    <Draggable
+      handle=".drag-handle"
+      defaultPosition={{ x: 0, y: 0 }}
+      onStart={() => setIsDragging(true)}
+      onStop={() => {
+        setTimeout(() => setIsDragging(false), 100);
+      }}
+      bounds="parent"
     >
-      <div
-        className="bg-slate-900 border border-purple-500/40 rounded-xl shadow-2xl shadow-purple-500/20 p-4 cursor-pointer hover:shadow-purple-500/30 transition-all hover:scale-105 min-w-[320px]"
-        onClick={onExpand}
+      <motion.div
+        className="fixed bottom-24 right-6 z-[60] cursor-move"
+        initial={{ y: 100, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 100, opacity: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
       >
+        <div
+          className="bg-slate-900 border border-purple-500/40 rounded-xl shadow-2xl shadow-purple-500/20 p-4 hover:shadow-purple-500/30 transition-all hover:scale-105 min-w-[320px]"
+        >
         <div className="flex items-center gap-3">
+          {/* Drag handle */}
+          <div className="drag-handle cursor-move p-1 hover:bg-slate-800 rounded transition">
+            <Move className="w-4 h-4 text-slate-500" />
+          </div>
+          
           {/* Animated spinner with progress ring */}
-          <div className="relative">
+          <div className="relative" onClick={(e) => {
+            e.stopPropagation();
+            if (!isDragging) onExpand();
+          }}>
             <div className="w-12 h-12 rounded-full bg-purple-500/20 flex items-center justify-center">
               <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
             </div>
@@ -69,7 +89,10 @@ export function MinimizedDeploymentIndicator({
           </div>
 
           {/* Status text */}
-          <div className="flex-1">
+          <div className="flex-1" onClick={(e) => {
+            e.stopPropagation();
+            if (!isDragging) onExpand();
+          }}>
             <div className="flex items-center justify-between mb-1">
               <h4 className="text-sm font-semibold text-slate-200">
                 Deploying...
@@ -107,10 +130,14 @@ export function MinimizedDeploymentIndicator({
         </div>
 
         {/* Expand hint */}
-        <p className="text-xs text-slate-500 text-center mt-2">
-          Click to expand • ESC to minimize
+        <p className="text-xs text-slate-500 text-center mt-2" onClick={(e) => {
+          e.stopPropagation();
+          if (!isDragging) onExpand();
+        }}>
+          Click to expand • Drag to move • ESC to minimize
         </p>
       </div>
-    </motion.div>
+      </motion.div>
+    </Draggable>
   );
 }

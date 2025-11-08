@@ -66,8 +66,14 @@ class CodeAnalyzerAgent:
             return analysis
         
         except Exception as e:
-            print(f"[CodeAnalyzer] Error: {str(e)}")
-            # Fallback to static analysis
+            error_msg = str(e)
+            print(f"[CodeAnalyzer] Error: {error_msg}")
+            
+            # Check if it's a quota error and re-raise to notify user
+            if '429' in error_msg or 'quota' in error_msg.lower() or 'resource exhausted' in error_msg.lower():
+                raise Exception(f"🚨 Gemini API Quota Exceeded: {error_msg}. Please check your API quota at https://ai.google.dev/")
+            
+            # For other errors, fallback to static analysis
             return self._fallback_analysis(project_path, file_structure)
     
     def _scan_directory(self, path: Path, max_depth: int = 3) -> Dict:
