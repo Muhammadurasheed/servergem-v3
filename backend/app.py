@@ -142,6 +142,9 @@ async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Quer
             gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
         )
         
+        # Store env vars for this session
+        session_env_vars = {}
+        
         # Send connection confirmation
         await websocket.send_json({
             'type': 'connected',
@@ -160,6 +163,55 @@ async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Quer
                     'type': 'pong',
                     'timestamp': datetime.now().isoformat()
                 })
+                continue
+            
+            # Handle env vars upload
+            if msg_type == 'env_vars_uploaded':
+                variables = data.get('variables', [])
+                count = data.get('count', len(variables))
+                
+                print(f"[WebSocket] Received {count} env vars from frontend")
+                
+                # Store in session
+                for var in variables:
+                    session_env_vars[var['key']] = {
+                        'value': var['value'],
+                        'isSecret': var.get('isSecret', False)
+                    }
+                
+                print(f"[WebSocket] Stored env vars: {list(session_env_vars.keys())}")
+                
+                # Update orchestrator context with env vars
+                user_orchestrator.project_context['env_vars'] = session_env_vars
+                
+                # Create a formatted list of env vars for AI
+                env_list = '\n'.join([
+                    f'• {key} {"(Secret 🔒)" if val["isSecret"] else ""}'
+                    for key, val in session_env_vars.items()
+                ])
+                
+                # Send confirmation message through AI
+                confirmation_msg = f"""✅ Perfect! I've received your environment variables:
+
+{env_list}
+
+All secrets will be stored securely in Google Secret Manager.
+
+Ready to deploy? Just say 'deploy' or 'yes'!"""
+                
+                await websocket.send_json({
+                    'type': 'message',
+                    'data': {
+                        'content': confirmation_msg,
+                        'intent': 'env_vars_confirmed',
+                        'metadata': {
+                            'env_vars_count': count,
+                            'secrets_count': sum(1 for v in session_env_vars.values() if v['isSecret'])
+                        }
+                    },
+                    'timestamp': datetime.now().isoformat()
+                })
+                
                 continue
             
             # Handle chat messages

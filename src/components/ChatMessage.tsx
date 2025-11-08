@@ -9,9 +9,10 @@ import { EnvVariablesInput, EnvVariable } from "./chat/EnvVariablesInput";
 interface ChatMessageProps {
   message: ChatMessage;
   onEnvSubmit?: (envVars: EnvVariable[]) => void;
+  sendStructuredMessage?: (type: string, data: any) => void;
 }
 
-const ChatMessageComponent = ({ message, onEnvSubmit }: ChatMessageProps) => {
+const ChatMessageComponent = ({ message, onEnvSubmit, sendStructuredMessage }: ChatMessageProps) => {
   const isUser = message.role === "user";
   const time = message.timestamp.toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -106,6 +107,7 @@ const ChatMessageComponent = ({ message, onEnvSubmit }: ChatMessageProps) => {
             <EnvVariablesInput 
               onEnvSubmit={onEnvSubmit}
               onSkip={() => onEnvSubmit([])}
+              sendMessageToBackend={sendStructuredMessage}
             />
           </div>
         )}

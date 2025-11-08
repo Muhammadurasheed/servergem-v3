@@ -241,6 +241,7 @@ export interface UseChatReturn {
   
   // Methods
   sendMessage: (content: string, context?: Record<string, any>) => void;
+  sendStructuredMessage: (type: string, data: any) => void;
   clearMessages: () => void;
   setDeploymentProgress: (progress: any) => void;
   

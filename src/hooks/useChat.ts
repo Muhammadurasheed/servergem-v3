@@ -349,6 +349,23 @@ export const useChat = (): UseChatReturn => {
     }
   }, [wsSendMessage, toast]);
   
+  /**
+   * Send structured data to backend (for env vars, etc.)
+   */
+  const sendStructuredMessage = useCallback((type: string, data: any) => {
+    if (!isConnected) {
+      console.warn('[useChat] Not connected, cannot send structured message');
+      return;
+    }
+    
+    console.log(`[useChat] Sending structured message: ${type}`, data);
+    
+    wsSendMessage({
+      type,
+      ...data,
+    });
+  }, [isConnected, wsSendMessage]);
+  
   const clearMessages = useCallback(() => {
     setMessages([]);
     setIsTyping(false);
@@ -387,6 +404,7 @@ export const useChat = (): UseChatReturn => {
     isTyping,
     connectionStatus,
     sendMessage,
+    sendStructuredMessage,
     clearMessages,
     connect: wsConnect,
     disconnect: wsDisconnect,

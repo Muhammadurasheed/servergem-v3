@@ -21,6 +21,7 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
     isTyping, 
     connectionStatus,
     sendMessage,
+    sendStructuredMessage,
     deploymentProgress,
     setDeploymentProgress,
   } = useChat();
@@ -248,19 +249,16 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
                   <div key={message.id}>
                     <ChatMessage 
                       message={message}
+                      sendStructuredMessage={sendStructuredMessage}
                       onEnvSubmit={(envVars) => {
-                        // Format env vars and send to backend
-                        const envMessage = envVars.length > 0
-                          ? `I've uploaded ${envVars.length} environment variables:\n${envVars.map(e => `- ${e.key}${e.isSecret ? ' (secret)' : ''}`).join('\n')}\n\nPlease proceed with deployment using these environment variables.`
-                          : 'Skip environment variables for now, I\'ll add them later.';
-                        
-                        // Send with env vars as context
-                        sendMessage(envMessage, { 
-                          envVars: envVars.reduce((acc, env) => {
-                            acc[env.key] = env.value;
-                            return acc;
-                          }, {} as Record<string, string>),
-                          secretKeys: envVars.filter(e => e.isSecret).map(e => e.key)
+                        // Send structured env vars data to backend via WebSocket
+                        sendStructuredMessage('env_vars_uploaded', {
+                          variables: envVars.map(env => ({
+                            key: env.key,
+                            value: env.value,
+                            isSecret: env.isSecret
+                          })),
+                          count: envVars.length
                         });
                       }}
                     />

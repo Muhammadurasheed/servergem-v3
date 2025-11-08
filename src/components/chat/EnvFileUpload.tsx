@@ -10,9 +10,10 @@ export interface EnvVariable {
 
 interface EnvFileUploadProps {
   onEnvParsed: (envVars: EnvVariable[]) => void;
+  onEnvsSentToBackend?: () => void;
 }
 
-export function EnvFileUpload({ onEnvParsed }: EnvFileUploadProps) {
+export function EnvFileUpload({ onEnvParsed, onEnvsSentToBackend }: EnvFileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [parsedEnvs, setParsedEnvs] = useState<EnvVariable[]>([]);
@@ -119,7 +120,15 @@ export function EnvFileUpload({ onEnvParsed }: EnvFileUploadProps) {
       
       console.log('[EnvFileUpload] Successfully parsed variables:', envVars);
       setParsedEnvs(envVars);
+      
+      // ✅ CRITICAL: Trigger callback to send to backend
       onEnvParsed(envVars);
+      
+      // Notify parent that env vars are ready to be sent
+      if (onEnvsSentToBackend) {
+        onEnvsSentToBackend();
+      }
+      
       toast.success(`Successfully parsed ${envVars.length} environment variable${envVars.length > 1 ? 's' : ''}`);
     } catch (error) {
       console.error('[EnvFileUpload] Error parsing .env file:', error);

@@ -9,10 +9,30 @@ export type { EnvVariable };
 interface EnvVariablesInputProps {
   onEnvSubmit: (envVars: EnvVariable[]) => void;
   onSkip?: () => void;
+  sendMessageToBackend?: (type: string, data: any) => void;
 }
 
-export function EnvVariablesInput({ onEnvSubmit, onSkip }: EnvVariablesInputProps) {
+export function EnvVariablesInput({ onEnvSubmit, onSkip, sendMessageToBackend }: EnvVariablesInputProps) {
   const [inputMethod, setInputMethod] = useState<'upload' | 'manual' | null>(null);
+  
+  const handleEnvSubmit = (envVars: EnvVariable[]) => {
+    console.log('[EnvVariablesInput] Submitting env vars to backend:', envVars.length);
+    
+    // Send to backend via WebSocket
+    if (sendMessageToBackend) {
+      sendMessageToBackend('env_vars_uploaded', {
+        variables: envVars.map(env => ({
+          key: env.key,
+          value: env.value,
+          isSecret: env.isSecret
+        })),
+        count: envVars.length
+      });
+    }
+    
+    // Also call parent callback
+    onEnvSubmit(envVars);
+  };
 
   if (!inputMethod) {
     return (
@@ -68,7 +88,12 @@ export function EnvVariablesInput({ onEnvSubmit, onSkip }: EnvVariablesInputProp
         >
           ← Back to options
         </button>
-        <EnvFileUpload onEnvParsed={onEnvSubmit} />
+        <EnvFileUpload 
+          onEnvParsed={handleEnvSubmit}
+          onEnvsSentToBackend={() => {
+            console.log('[EnvVariablesInput] Env vars sent to backend successfully');
+          }}
+        />
       </div>
     );
   }
@@ -81,7 +106,7 @@ export function EnvVariablesInput({ onEnvSubmit, onSkip }: EnvVariablesInputProp
       >
         ← Back to options
       </button>
-      <ManualEnvInput onEnvSubmit={onEnvSubmit} />
+      <ManualEnvInput onEnvSubmit={handleEnvSubmit} />
     </div>
   );
 }
