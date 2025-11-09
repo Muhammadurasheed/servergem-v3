@@ -133,7 +133,10 @@ export interface ServerDeploymentUpdate {
 export interface ServerDeploymentStarted {
   type: 'deployment_started';
   deployment_id: string;
-  message: string;
+  data?: {
+    message?: string;
+  };
+  message?: string;
   timestamp: string;
 }
 
@@ -151,9 +154,13 @@ export interface ServerDeploymentProgress {
 export interface ServerDeploymentComplete {
   type: 'deployment_complete';
   data: {
-    url: string;
-    service_name: string;
-    region: string;
+    status?: string;
+    message?: string;
+    url?: string;
+    service_name?: string;
+    region?: string;
+    error?: string;
+    details?: Record<string, any>;
     metadata?: Record<string, any>;
   };
   timestamp: string;

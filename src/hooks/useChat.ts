@@ -120,10 +120,12 @@ export const useChat = (): UseChatReturn => {
         console.log('[useChat] 🚀 Deployment started:', (serverMessage as any).deployment_id);
         setIsTyping(true);
         
-        // Add deployment started message
+        const deploymentMsg = serverMessage as any;
+        const deployStartContent = `## 🚀 Deployment Started\n\n${deploymentMsg.data?.message || 'Starting deployment process to Cloud Run...'}\n\n**Deployment ID:** \`${deploymentMsg.deployment_id}\`\n\n---\n\n*Real-time updates will appear below as each stage completes...*`;
+        
         addAssistantMessage({
-          content: '🚀 **Deployment Started**\n\nI\'m now deploying your application to Cloud Run. This will take a few minutes...',
-          metadata: { type: 'deployment_started' }
+          content: deployStartContent,
+          metadata: { type: 'deployment_started', deployment_id: deploymentMsg.deployment_id }
         });
         break;
       
@@ -131,9 +133,9 @@ export const useChat = (): UseChatReturn => {
         console.log('[useChat] 📊 Deployment progress:', (serverMessage as any).stage, (serverMessage as any).status);
         setIsTyping(true);
         
-        // Add progress update as chat message
+        // Add beautifully formatted progress update
         const progressMsg = serverMessage as any;
-        const stageEmojis: Record<string, string> = {
+        const stageIcons: Record<string, string> = {
           repo_clone: '📦',
           code_analysis: '🔍',
           dockerfile_generation: '🐳',
@@ -142,13 +144,52 @@ export const useChat = (): UseChatReturn => {
           cloud_deployment: '☁️',
         };
         
-        const emoji = stageEmojis[progressMsg.stage] || '⚙️';
-        const statusText = progressMsg.status === 'in-progress' ? 'Working on' : 
-                          progressMsg.status === 'success' ? 'Completed' : 
-                          progressMsg.status === 'error' ? 'Failed' : 'Starting';
+        const stageNames: Record<string, string> = {
+          repo_clone: 'Repository Clone',
+          code_analysis: 'Code Analysis',
+          dockerfile_generation: 'Dockerfile Generation',
+          security_scan: 'Security Scan',
+          container_build: 'Container Build',
+          cloud_deployment: 'Cloud Deployment',
+        };
+        
+        const icon = stageIcons[progressMsg.stage] || '⚙️';
+        const stageName = stageNames[progressMsg.stage] || progressMsg.stage;
+        
+        let statusIcon = '';
+        let statusText = '';
+        
+        if (progressMsg.status === 'success') {
+          statusIcon = '✅';
+          statusText = 'Complete';
+        } else if (progressMsg.status === 'error') {
+          statusIcon = '❌';
+          statusText = 'Failed';
+        } else if (progressMsg.status === 'in-progress') {
+          statusIcon = '⏳';
+          statusText = 'In Progress';
+        }
+        
+        let content = `### ${icon} ${stageName} ${statusIcon}\n\n`;
+        content += `**Status:** ${statusText}`;
+        
+        if (progressMsg.progress !== undefined && progressMsg.progress > 0) {
+          content += ` - ${progressMsg.progress}%`;
+        }
+        
+        content += `\n\n${progressMsg.message}`;
+        
+        // Add details in clean format
+        if (progressMsg.details) {
+          content += '\n\n**Details:**';
+          Object.entries(progressMsg.details).forEach(([key, value]) => {
+            const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+            content += `\n- ${formattedKey}: \`${value}\``;
+          });
+        }
         
         addAssistantMessage({
-          content: `${emoji} **${statusText}:** ${progressMsg.message}`,
+          content,
           metadata: { type: 'deployment_progress', stage: progressMsg.stage }
         });
         break;
@@ -171,7 +212,65 @@ export const useChat = (): UseChatReturn => {
         
       case 'deployment_complete':
         setIsTyping(false);
-        addDeploymentCompleteMessage(serverMessage.data);
+        
+        const deployData = serverMessage.data;
+        const isSuccess = deployData?.status === 'success';
+        const completeEmoji = isSuccess ? '🎉' : '❌';
+        const completeTitle = isSuccess ? 'Deployment Successful!' : 'Deployment Failed';
+        
+        let completeContent = `## ${completeEmoji} ${completeTitle}\n\n---\n\n`;
+        completeContent += deployData?.message || 'Deployment process completed.';
+        
+        if (deployData?.url) {
+          completeContent += `\n\n### 🌐 Your Application is Live!\n\n`;
+          completeContent += `**URL:** [${deployData.url}](${deployData.url})\n\n`;
+          completeContent += `Click the link above to view your deployed application.`;
+        }
+        
+        if (deployData?.error) {
+          completeContent += `\n\n### ❌ Error Details\n\n\`\`\`\n${deployData.error}\n\`\`\``;
+        }
+        
+        if (deployData?.details) {
+          completeContent += '\n\n### 📊 Deployment Summary\n';
+          Object.entries(deployData.details).forEach(([key, value]) => {
+            const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+            completeContent += `\n- **${formattedKey}:** \`${value}\``;
+          });
+        }
+        
+        const completeMessage: ChatMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'assistant',
+          content: completeContent,
+          timestamp: new Date(),
+          deploymentUrl: deployData?.url,
+          actions: isSuccess ? [
+            { id: 'view_logs', label: '📊 View Logs', type: 'button', action: 'view_logs' },
+            { id: 'setup_cicd', label: '🔄 Set Up CI/CD', type: 'button', action: 'setup_cicd' },
+            { id: 'custom_domain', label: '🌐 Custom Domain', type: 'button', action: 'custom_domain' },
+          ] : undefined,
+        };
+        
+        setMessages(prev => [...prev, completeMessage]);
+        
+        // Show success/error toast
+        if (isSuccess) {
+          sonnerToast.success('Deployment Complete! 🎉', {
+            description: deployData?.url || 'Your app is live!',
+            duration: 5000,
+          });
+          
+          toast({
+            title: '🎉 Deployment Successful!',
+            description: `Your app is live at ${deployData?.url}`,
+          });
+        } else {
+          sonnerToast.error('Deployment Failed', {
+            description: deployData?.error || 'Please check the logs for details.',
+            duration: 5000,
+          });
+        }
         break;
         
       case 'error':

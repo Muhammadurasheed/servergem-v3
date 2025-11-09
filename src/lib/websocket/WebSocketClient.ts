@@ -221,15 +221,18 @@ export class WebSocketClient {
     console.log('[WebSocket] 🆔 Instance ID:', this.instanceId);
     console.log('[WebSocket] 🔑 Session ID (persistent):', this.sessionId);
     console.log('[WebSocket] 🔄 Reconnect attempt:', this.reconnectAttempts);
+    
+    // Save reconnect status BEFORE resetting
+    const wasReconnect = this.reconnectAttempts > 0;
     this.reconnectAttempts = 0;
-    this.updateConnectionStatus('connected', undefined);
+    this.updateConnectionStatus('connected', undefined, wasReconnect ? 1 : 0);
     
     // Send init message with persistent session_id
     this.sendMessage({
       type: 'init',
       session_id: this.sessionId, // This persists across reconnections!
       instance_id: this.instanceId, // For debugging
-      is_reconnect: this.reconnectAttempts > 0,
+      is_reconnect: wasReconnect, // Now correctly reports reconnections!
       metadata: {
         userAgent: navigator.userAgent,
         timestamp: new Date().toISOString(),
