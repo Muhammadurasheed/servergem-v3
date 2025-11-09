@@ -318,17 +318,24 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
             print(f"Client {session_id} disconnected")
     
     except Exception as e:
-        print(f"WebSocket error for session {session_id}: {str(e)}")
+        error_msg = str(e)
+        print(f"WebSocket error for session {session_id}: {error_msg}")
+        
+        # DON'T delete from active_connections on errors!
+        # The reconnection logic will handle updating the connection
+        # This allows deployments to continue even if connection is briefly lost
+        
+        # Only try to send error if connection might still be alive
         if session_id and session_id in active_connections:
             try:
                 await websocket.send_json({
                     'type': 'error',
-                    'message': str(e),
+                    'message': error_msg,
                     'timestamp': datetime.now().isoformat()
                 })
             except:
-                pass
-            del active_connections[session_id]
+                # Connection truly dead, but don't delete - let reconnection handle it
+                print(f"[WebSocket] Could not send error to {session_id}, connection dead")
 
 
 # ============================================================================

@@ -89,34 +89,46 @@ class ProgressNotifier:
                 return
     
     async def start_stage(self, stage: str, message: str):
-        """Mark stage as started"""
-        self.current_stage = stage
-        self.stage_start_time = datetime.now()
-        await self.send_update(stage, "in-progress", message)
+        """Mark stage as started - never throws exceptions"""
+        try:
+            self.current_stage = stage
+            self.stage_start_time = datetime.now()
+            await self.send_update(stage, "in-progress", message)
+        except Exception as e:
+            print(f"[ProgressNotifier] ❌ start_stage failed: {e}")
     
     async def complete_stage(self, stage: str, message: str, details: Optional[Dict] = None):
-        """Mark stage as completed"""
-        duration = None
-        if self.stage_start_time:
-            duration = (datetime.now() - self.stage_start_time).total_seconds()
-        
-        if details is None:
-            details = {}
-        
-        if duration:
-            details["duration"] = f"{duration:.1f}s"
-        
-        await self.send_update(stage, "success", message, details=details)
-        self.stage_start_time = None
+        """Mark stage as completed - never throws exceptions"""
+        try:
+            duration = None
+            if self.stage_start_time:
+                duration = (datetime.now() - self.stage_start_time).total_seconds()
+            
+            if details is None:
+                details = {}
+            
+            if duration:
+                details["duration"] = f"{duration:.1f}s"
+            
+            await self.send_update(stage, "success", message, details=details)
+            self.stage_start_time = None
+        except Exception as e:
+            print(f"[ProgressNotifier] ❌ complete_stage failed: {e}")
     
     async def fail_stage(self, stage: str, error_message: str, details: Optional[Dict] = None):
-        """Mark stage as failed"""
-        await self.send_update(stage, "error", error_message, details=details)
-        self.stage_start_time = None
+        """Mark stage as failed - never throws exceptions"""
+        try:
+            await self.send_update(stage, "error", error_message, details=details)
+            self.stage_start_time = None
+        except Exception as e:
+            print(f"[ProgressNotifier] ❌ fail_stage failed: {e}")
     
     async def update_progress(self, stage: str, message: str, progress: int):
-        """Send progress update within a stage"""
-        await self.send_update(stage, "in-progress", message, progress=progress)
+        """Send progress update within a stage - never throws exceptions"""
+        try:
+            await self.send_update(stage, "in-progress", message, progress=progress)
+        except Exception as e:
+            print(f"[ProgressNotifier] ❌ update_progress failed: {e}")
 
 
 # Stage name constants
