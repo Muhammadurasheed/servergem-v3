@@ -1,6 +1,7 @@
 """
 ServerGem Backend API
 FastAPI server optimized for Google Cloud Run
+بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
 """
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
@@ -13,6 +14,7 @@ import asyncio
 from datetime import datetime
 import json
 import uuid
+import traceback
 
 from agents.orchestrator import OrchestratorAgent
 from services.deployment_service import deployment_service
@@ -34,7 +36,7 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration for Cloud Run
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
@@ -46,10 +48,10 @@ app.add_middleware(
 # Usage tracking middleware
 app.add_middleware(UsageTrackingMiddleware)
 
-# Store active WebSocket connections
-active_connections: dict[str, WebSocket] = {}
+# Store active WebSocket connections with metadata
+active_connections: dict[str, dict] = {}
 
-# Initialize orchestrator with real services
+# Initialize orchestrator
 orchestrator = OrchestratorAgent(
     gemini_api_key=os.getenv('GEMINI_API_KEY'),
     github_token=os.getenv('GITHUB_TOKEN'),
@@ -61,6 +63,93 @@ class ChatMessage(BaseModel):
     message: str
     session_id: str
 
+
+# ============================================================================
+# HELPER FUNCTIONS FOR SAFE WEBSOCKET SENDING
+# ============================================================================
+
+async def safe_send_json(session_id: str, data: dict) -> bool:
+    """
+    Safely send JSON to WebSocket, handling all error cases.
+    Returns True if sent successfully, False otherwise.
+    """
+    if session_id not in active_connections:
+        print(f"[WebSocket] ⚠️  Session {session_id} not in active connections")
+        return False
+    
+    connection_info = active_connections[session_id]
+    websocket = connection_info['websocket']
+    
+    try:
+        # Check if WebSocket is in a state that can send
+        if websocket.client_state.name != "CONNECTED":
+            print(f"[WebSocket] ⚠️  Session {session_id} not connected (state: {websocket.client_state.name})")
+            return False
+        
+        # Try to send
+        await websocket.send_json(data)
+        print(f"[WebSocket] ✅ Sent to {session_id}: {data.get('type', 'unknown')}")
+        return True
+        
+    except RuntimeError as e:
+        if "close message has been sent" in str(e):
+            print(f"[WebSocket] ⚠️  Session {session_id} already closed, removing from active connections")
+            # Remove from active connections
+            if session_id in active_connections:
+                del active_connections[session_id]
+            return False
+        else:
+            print(f"[WebSocket] ❌ RuntimeError sending to {session_id}: {e}")
+            return False
+            
+    except Exception as e:
+        print(f"[WebSocket] ❌ Error sending to {session_id}: {e}")
+        return False
+
+
+async def broadcast_to_session(session_id: str, data: dict):
+    """Broadcast message to a specific session with retries"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        success = await safe_send_json(session_id, data)
+        if success:
+            return True
+        
+        if attempt < max_retries - 1:
+            print(f"[WebSocket] 🔄 Retry {attempt + 1}/{max_retries} for session {session_id}")
+            await asyncio.sleep(0.5)
+    
+    print(f"[WebSocket] ❌ Failed to send to {session_id} after {max_retries} attempts")
+    return False
+
+
+# ============================================================================
+# KEEP-ALIVE TASK
+# ============================================================================
+
+async def keep_alive_task(session_id: str):
+    """Send periodic pings to keep connection alive"""
+    while session_id in active_connections:
+        try:
+            await asyncio.sleep(30)  # Ping every 30 seconds
+            
+            if session_id in active_connections:
+                await safe_send_json(session_id, {
+                    'type': 'ping',
+                    'timestamp': datetime.now().isoformat()
+                })
+                print(f"[WebSocket] 🏓 Heartbeat sent to {session_id}")
+        except asyncio.CancelledError:
+            print(f"[WebSocket] Keep-alive task cancelled for {session_id}")
+            break
+        except Exception as e:
+            print(f"[WebSocket] ❌ Keep-alive error for {session_id}: {e}")
+            break
+
+
+# ============================================================================
+# MAIN ENDPOINTS
+# ============================================================================
 
 @app.get("/")
 async def root():
@@ -97,24 +186,28 @@ async def chat(message: ChatMessage):
 
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Query(None)):
-    """WebSocket endpoint for real-time chat with user API key support"""
+    """
+    WebSocket endpoint with bulletproof error handling
+    بِسْمِ اللَّهِ - In the name of Allah, the Most Gracious, the Most Merciful
+    """
     
     session_id = None
     user_api_key = api_key
+    keep_alive = None
     
     try:
-        # Get API key from query params or use default
+        # Get API key
         if not user_api_key:
             user_api_key = os.getenv('GEMINI_API_KEY')
         
-        # Check if API key is available
         if not user_api_key:
             await websocket.close(code=1008, reason="API key required")
             return
         
         await websocket.accept()
+        print(f"[WebSocket] ✅ Connection accepted")
         
-        # Test API key validity by configuring Gemini
+        # Test API key
         try:
             import google.generativeai as genai
             genai.configure(api_key=user_api_key)
@@ -122,100 +215,125 @@ async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Quer
         except Exception as e:
             await websocket.send_json({
                 'type': 'error',
-                'message': 'Invalid API key. Please check your Gemini API key in Settings.',
+                'message': 'Invalid API key. Please check your Gemini API key.',
                 'code': 'INVALID_API_KEY',
                 'timestamp': datetime.now().isoformat()
             })
             await websocket.close(code=1008)
             return
         
-        # Receive initial connection message with session_id
-        init_message = await websocket.receive_json()
+        # Receive init message
+        init_message = await asyncio.wait_for(
+            websocket.receive_json(),
+            timeout=10.0
+        )
+        
         message_type = init_message.get('type')
         
         if message_type != 'init':
             await websocket.close(code=1008, reason="Expected init message")
             return
         
-        session_id = init_message.get('session_id', 'unknown')
+        session_id = init_message.get('session_id', f'session_{uuid.uuid4().hex[:12]}')
         instance_id = init_message.get('instance_id', 'unknown')
         is_reconnect = init_message.get('is_reconnect', False)
         
         print(f"[WebSocket] 🔌 Client connecting:")
         print(f"  Session ID: {session_id}")
         print(f"  Instance ID: {instance_id}")
-        print(f"  Is Reconnect: {is_reconnect}")
+        print(f"  Reconnect: {is_reconnect}")
         
-        # Check if this session_id already exists (reconnection)
+        # Handle reconnection
         if session_id in active_connections:
-            old_ws = active_connections[session_id]
-            print(f"[WebSocket] 🔄 Reconnection detected! Updating connection for session {session_id}")
-            # Close old connection gracefully
+            print(f"[WebSocket] 🔄 Reconnection detected for {session_id}")
+            old_connection = active_connections[session_id]
+            old_ws = old_connection['websocket']
+            old_keep_alive = old_connection.get('keep_alive_task')
+            
+            # Cancel old keep-alive task
+            if old_keep_alive and not old_keep_alive.done():
+                old_keep_alive.cancel()
+                try:
+                    await old_keep_alive
+                except asyncio.CancelledError:
+                    pass
+            
+            # Close old WebSocket gracefully
             try:
                 await old_ws.close(code=1000, reason="Client reconnected")
             except:
                 pass
         
-        # Store/update connection with persistent session_id
-        active_connections[session_id] = websocket
-        print(f"[WebSocket] ✅ Session {session_id} registered. Active connections: {len(active_connections)}")
+        # Store new connection
+        keep_alive = asyncio.create_task(keep_alive_task(session_id))
         
-        # Create orchestrator with user's API key
+        active_connections[session_id] = {
+            'websocket': websocket,
+            'keep_alive_task': keep_alive,
+            'connected_at': datetime.now().isoformat(),
+            'instance_id': instance_id
+        }
+        
+        print(f"[WebSocket] ✅ Session {session_id} registered. Active: {len(active_connections)}")
+        
+        # Create orchestrator
         user_orchestrator = OrchestratorAgent(
             gemini_api_key=user_api_key,
             github_token=os.getenv('GITHUB_TOKEN'),
             gcloud_project=os.getenv('GOOGLE_CLOUD_PROJECT')
         )
         
-        # Store env vars for this session
+        # Session env vars
         session_env_vars = {}
         
         # Send connection confirmation
-        await websocket.send_json({
+        await safe_send_json(session_id, {
             'type': 'connected',
             'session_id': session_id,
             'message': 'Connected to ServerGem AI - Ready to deploy!'
         })
         
-        # Message loop
+        # Message loop with timeout
         while True:
-            data = await websocket.receive_json()
-            msg_type = data.get('type')
-            
-            # Handle ping/pong heartbeat
-            if msg_type == 'ping':
-                await websocket.send_json({
-                    'type': 'pong',
-                    'timestamp': datetime.now().isoformat()
-                })
+            try:
+                # Use timeout to allow periodic checks
+                data = await asyncio.wait_for(
+                    websocket.receive_json(),
+                    timeout=60.0  # 1 minute timeout
+                )
+            except asyncio.TimeoutError:
+                # Timeout is OK, just continue loop
                 continue
             
-            # Handle env vars upload
+            msg_type = data.get('type')
+            
+            # Handle pong response
+            if msg_type == 'pong':
+                print(f"[WebSocket] 🏓 Pong received from {session_id}")
+                continue
+            
+            # Handle env vars
             if msg_type == 'env_vars_uploaded':
                 variables = data.get('variables', [])
                 count = data.get('count', len(variables))
                 
-                print(f"[WebSocket] Received {count} env vars from frontend")
+                print(f"[WebSocket] 📦 Received {count} env vars")
                 
-                # Store in session
+                # Store
                 for var in variables:
                     session_env_vars[var['key']] = {
                         'value': var['value'],
                         'isSecret': var.get('isSecret', False)
                     }
                 
-                print(f"[WebSocket] Stored env vars: {list(session_env_vars.keys())}")
-                
-                # Update orchestrator context with env vars
                 user_orchestrator.project_context['env_vars'] = session_env_vars
                 
-                # Create a formatted list of env vars for AI
+                # Format list
                 env_list = '\n'.join([
                     f'• {key} {"(Secret 🔒)" if val["isSecret"] else ""}'
                     for key, val in session_env_vars.items()
                 ])
                 
-                # Send confirmation message through AI
                 confirmation_msg = f"""✅ Perfect! I've received your environment variables:
 
 {env_list}
@@ -224,7 +342,7 @@ All secrets will be stored securely in Google Secret Manager.
 
 Ready to deploy? Just say 'deploy' or 'yes'!"""
                 
-                await websocket.send_json({
+                await safe_send_json(session_id, {
                     'type': 'message',
                     'data': {
                         'content': confirmation_msg,
@@ -246,33 +364,37 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
                 if not message:
                     continue
                 
-                # Send typing indicator
-                await websocket.send_json({
+                # Typing indicator
+                await safe_send_json(session_id, {
                     'type': 'typing',
                     'timestamp': datetime.now().isoformat()
                 })
                 
-                # Check if this might trigger deployment (simple heuristic)
+                # Check for deployment keywords
                 deployment_keywords = ['deploy', 'start', 'begin', 'launch', 'go ahead', 'yes', 'proceed']
                 might_deploy = any(keyword in message.lower() for keyword in deployment_keywords)
                 
-                # If might deploy, create progress notifier
+                # Create progress notifier
                 progress_notifier = None
                 if might_deploy:
                     deployment_id = f"deploy-{uuid.uuid4().hex[:8]}"
-                    # Pass session_id and active_connections so notifier can use CURRENT connection
-                    progress_notifier = ProgressNotifier(session_id, deployment_id, active_connections)
+                    # Pass session_id and safe_send function
+                    progress_notifier = ProgressNotifier(
+                        session_id, 
+                        deployment_id, 
+                        safe_send_json  # Pass the safe send function!
+                    )
                     print(f"[WebSocket] ✨ Created progress notifier: {deployment_id}")
                     
-                    # Send deployment started notification
-                    await websocket.send_json({
+                    # Send deployment started
+                    await safe_send_json(session_id, {
                         "type": "deployment_started",
                         "deployment_id": deployment_id,
                         "message": "🚀 Starting deployment process...",
                         "timestamp": datetime.now().isoformat()
                     })
                 
-                # Process message with user's orchestrator (with progress streaming)
+                # Process message
                 try:
                     response = await user_orchestrator.process_message(
                         message,
@@ -280,8 +402,8 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
                         progress_notifier=progress_notifier
                     )
                     
-                    # Send final response
-                    await websocket.send_json({
+                    # Send response
+                    await safe_send_json(session_id, {
                         'type': 'message',
                         'data': response,
                         'timestamp': datetime.now().isoformat()
@@ -289,53 +411,58 @@ Ready to deploy? Just say 'deploy' or 'yes'!"""
                     
                 except Exception as e:
                     error_msg = str(e)
-                    # Check for API quota errors
+                    print(f"[WebSocket] ❌ Error processing message: {error_msg}")
+                    print(traceback.format_exc())
+                    
+                    # Send error
                     if '429' in error_msg or 'quota' in error_msg.lower():
-                        await websocket.send_json({
+                        await safe_send_json(session_id, {
                             'type': 'error',
-                            'message': 'API quota exceeded. Please check your Gemini API quota or try again later.',
+                            'message': 'API quota exceeded. Please try again later.',
                             'code': 'QUOTA_EXCEEDED',
                             'timestamp': datetime.now().isoformat()
                         })
-                    elif '401' in error_msg or '403' in error_msg or 'invalid' in error_msg.lower():
-                        await websocket.send_json({
+                    elif '401' in error_msg or '403' in error_msg:
+                        await safe_send_json(session_id, {
                             'type': 'error',
-                            'message': 'Invalid API key. Please update your Gemini API key in Settings.',
+                            'message': 'Invalid API key. Please check Settings.',
                             'code': 'INVALID_API_KEY',
                             'timestamp': datetime.now().isoformat()
                         })
                     else:
-                        await websocket.send_json({
+                        await safe_send_json(session_id, {
                             'type': 'error',
-                            'message': f'Error processing message: {error_msg}',
+                            'message': f'Error: {error_msg}',
                             'code': 'API_ERROR',
                             'timestamp': datetime.now().isoformat()
                         })
     
     except WebSocketDisconnect:
-        if session_id and session_id in active_connections:
-            del active_connections[session_id]
-            print(f"Client {session_id} disconnected")
+        print(f"[WebSocket] 🔌 Client {session_id} disconnected normally")
+    
+    except asyncio.TimeoutError:
+        print(f"[WebSocket] ⏰ Timeout for {session_id}")
     
     except Exception as e:
-        error_msg = str(e)
-        print(f"WebSocket error for session {session_id}: {error_msg}")
-        
-        # DON'T delete from active_connections on errors!
-        # The reconnection logic will handle updating the connection
-        # This allows deployments to continue even if connection is briefly lost
-        
-        # Only try to send error if connection might still be alive
+        print(f"[WebSocket] ❌ Error for {session_id}: {e}")
+        print(traceback.format_exc())
+    
+    finally:
+        # Cleanup
         if session_id and session_id in active_connections:
-            try:
-                await websocket.send_json({
-                    'type': 'error',
-                    'message': error_msg,
-                    'timestamp': datetime.now().isoformat()
-                })
-            except:
-                # Connection truly dead, but don't delete - let reconnection handle it
-                print(f"[WebSocket] Could not send error to {session_id}, connection dead")
+            connection_info = active_connections[session_id]
+            
+            # Cancel keep-alive
+            if keep_alive and not keep_alive.done():
+                keep_alive.cancel()
+                try:
+                    await keep_alive
+                except asyncio.CancelledError:
+                    pass
+            
+            # Remove from active connections
+            del active_connections[session_id]
+            print(f"[WebSocket] 🧹 Cleaned up {session_id}. Remaining: {len(active_connections)}")
 
 
 # ============================================================================
@@ -351,7 +478,6 @@ async def create_user(
     github_token: Optional[str] = None
 ):
     """Create new user account"""
-    # Check if user already exists
     existing = user_service.get_user_by_email(email)
     if existing:
         return {"user": existing.to_dict(), "existing": True}
@@ -432,7 +558,6 @@ async def create_deployment(
     env_vars: dict = None
 ):
     """Create new deployment"""
-    # Check user limits
     user = user_service.get_user(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -452,7 +577,6 @@ async def create_deployment(
         env_vars=env_vars
     )
     
-    # Track deployment in usage
     usage_service.track_deployment(user_id)
     
     return deployment.to_dict()
