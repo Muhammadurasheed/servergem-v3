@@ -5,8 +5,6 @@ import ChatMessage from "./ChatMessage";
 import ChatInput from "./ChatInput";
 import { useChat } from "@/hooks/useChat";
 import type { MessageAction } from "@/types/websocket";
-import { DeploymentProgressPanel } from "./deployment/DeploymentProgressPanel";
-import { AnimatePresence } from "framer-motion";
 
 interface ChatWindowProps {
   onClose: () => void;
@@ -21,14 +19,11 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
     connectionStatus,
     sendMessage,
     sendStructuredMessage,
-    deploymentProgress,
-    setDeploymentProgress,
   } = useChat();
   
   const [isMinimized, setIsMinimized] = useState(false);
   const [isMaximized, setIsMaximized] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-  const [showDeploymentPanel, setShowDeploymentPanel] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const isReconnecting = connectionStatus.state === 'reconnecting';
@@ -78,11 +73,6 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
 
   const handleQuickAction = (action: string) => {
     sendMessage(action);
-  };
-  
-  const handleCloseDeployment = () => {
-    setShowDeploymentPanel(false);
-    setDeploymentProgress(null);
   };
 
   // Get connection status display
@@ -340,16 +330,6 @@ const ChatWindow = ({ onClose, initialMessage }: ChatWindowProps) => {
       {!isMaximized && !isMinimized && (
         <div className="resize-handle-indicator" />
       )}
-      
-      {/* Deployment Progress Panel - Manages its own minimize state */}
-      <AnimatePresence>
-        {deploymentProgress && showDeploymentPanel && (
-          <DeploymentProgressPanel
-            progress={deploymentProgress}
-            onClose={handleCloseDeployment}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 };
