@@ -19,13 +19,17 @@ interface WebSocketContextValue {
 const WebSocketContext = createContext<WebSocketContextValue | null>(null);
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new WebSocketClient());
+  const [client] = useState(() => {
+    console.log('[WebSocketProvider] 🏗️ Creating WebSocketClient singleton');
+    return new WebSocketClient();
+  });
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>({
     state: 'idle',
   });
 
   useEffect(() => {
     console.log('[WebSocketProvider] 🚀 Initializing app-level WebSocket connection');
+    console.log('[WebSocketProvider] 🔍 Checking for duplicate mounts...');
 
     // Subscribe to connection changes
     const unsubscribe = client.onConnectionChange((status) => {
@@ -45,11 +49,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
     // Cleanup only when app unmounts (not when components remount)
     return () => {
-      console.log('[WebSocketProvider] 🔴 App unmounting - cleaning up WebSocket');
+      console.log('[WebSocketProvider] 🔴 Provider unmounting - cleaning up WebSocket');
+      console.log('[WebSocketProvider] 🔍 This should only happen once during app lifetime');
       unsubscribe();
       client.destroy();
     };
-  }, []); // Empty deps - only run once for app lifetime
+  }, [client]); // Only depend on client (which never changes due to useState)
 
   const sendMessage = useCallback((message: ClientMessage) => {
     return client.sendMessage(message);

@@ -19,10 +19,14 @@ import { WS_CONFIG, getSessionId } from './config';
 
 type EventHandler<T = any> = (data: T) => void;
 
+// Singleton instance tracker to prevent multiple clients
+let activeClientInstance: WebSocketClient | null = null;
+
 export class WebSocketClient {
   private ws: WebSocket | null = null;
   private sessionId: string;
   private config: WebSocketConfig;
+  private instanceId: string;
   
   // Connection state
   private connectionStatus: ConnectionStatus = {
@@ -53,8 +57,20 @@ export class WebSocketClient {
   };
   
   constructor(config: Partial<WebSocketConfig> = {}) {
+    this.instanceId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     this.config = { ...WS_CONFIG, ...config };
     this.sessionId = getSessionId();
+    
+    // Track active instance for debugging
+    if (activeClientInstance) {
+      console.warn('[WebSocket] ⚠️ Multiple WebSocketClient instances detected!');
+      console.warn('[WebSocket] Previous instance:', activeClientInstance.instanceId);
+      console.warn('[WebSocket] New instance:', this.instanceId);
+    }
+    activeClientInstance = this;
+    
+    console.log('[WebSocket] 🆕 Created new client instance:', this.instanceId);
+    console.log('[WebSocket] 🔑 Persistent session ID:', this.sessionId);
   }
   
   // ========================================================================
@@ -70,8 +86,15 @@ export class WebSocketClient {
       return;
     }
     
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      console.log('[WebSocket] Connection already in progress');
+      return;
+    }
+    
     this.isIntentionalClose = false;
     this.updateConnectionStatus('connecting');
+    
+    console.log('[WebSocket] 🔌 Connecting... (instance:', this.instanceId, 'session:', this.sessionId, ')');
     
     try {
       // Get API key from localStorage
@@ -195,14 +218,18 @@ export class WebSocketClient {
   
   private handleOpen(): void {
     console.log('[WebSocket] ✅ Connected successfully to server');
-    console.log('[WebSocket] Session ID:', this.sessionId);
+    console.log('[WebSocket] 🆔 Instance ID:', this.instanceId);
+    console.log('[WebSocket] 🔑 Session ID (persistent):', this.sessionId);
+    console.log('[WebSocket] 🔄 Reconnect attempt:', this.reconnectAttempts);
     this.reconnectAttempts = 0;
     this.updateConnectionStatus('connected', undefined);
     
-    // Send init message
+    // Send init message with persistent session_id
     this.sendMessage({
       type: 'init',
-      session_id: this.sessionId,
+      session_id: this.sessionId, // This persists across reconnections!
+      instance_id: this.instanceId, // For debugging
+      is_reconnect: this.reconnectAttempts > 0,
       metadata: {
         userAgent: navigator.userAgent,
         timestamp: new Date().toISOString(),
@@ -437,12 +464,17 @@ export class WebSocketClient {
    * Destroy the client and cleanup all resources
    */
   public destroy(): void {
-    console.log('[WebSocket] Destroying client');
+    console.log('[WebSocket] 💥 Destroying client instance:', this.instanceId);
     this.isIntentionalClose = true;
     this.cleanup();
     this.eventHandlers.message.clear();
     this.eventHandlers.error.clear();
     this.eventHandlers.connectionChange.clear();
     this.messageQueue = [];
+    
+    // Clear singleton reference if this is the active instance
+    if (activeClientInstance === this) {
+      activeClientInstance = null;
+    }
   }
 }

@@ -138,8 +138,27 @@ async def websocket_endpoint(websocket: WebSocket, api_key: Optional[str] = Quer
             return
         
         session_id = init_message.get('session_id', 'unknown')
+        instance_id = init_message.get('instance_id', 'unknown')
+        is_reconnect = init_message.get('is_reconnect', False)
         
+        print(f"[WebSocket] 🔌 Client connecting:")
+        print(f"  Session ID: {session_id}")
+        print(f"  Instance ID: {instance_id}")
+        print(f"  Is Reconnect: {is_reconnect}")
+        
+        # Check if this session_id already exists (reconnection)
+        if session_id in active_connections:
+            old_ws = active_connections[session_id]
+            print(f"[WebSocket] 🔄 Reconnection detected! Updating connection for session {session_id}")
+            # Close old connection gracefully
+            try:
+                await old_ws.close(code=1000, reason="Client reconnected")
+            except:
+                pass
+        
+        # Store/update connection with persistent session_id
         active_connections[session_id] = websocket
+        print(f"[WebSocket] ✅ Session {session_id} registered. Active connections: {len(active_connections)}")
         
         # Create orchestrator with user's API key
         user_orchestrator = OrchestratorAgent(

@@ -52,6 +52,8 @@ export type ClientMessageType =
 export interface ClientInitMessage {
   type: 'init';
   session_id: string;
+  instance_id?: string;
+  is_reconnect?: boolean;
   metadata?: {
     userAgent: string;
     timestamp: string;
